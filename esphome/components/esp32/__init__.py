@@ -47,15 +47,18 @@ AUTO_LOAD = ["preferences"]
 def set_core_data(config):
     CORE.data[KEY_ESP32] = {}
     CORE.data[KEY_CORE][KEY_TARGET_PLATFORM] = "esp32"
-    conf = config[CONF_FRAMEWORK]
-    if conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
-        CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = "esp-idf"
-        CORE.data[KEY_ESP32][KEY_SDKCONFIG_OPTIONS] = {}
-    elif conf[CONF_TYPE] == FRAMEWORK_ARDUINO:
-        CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = "arduino"
-    CORE.data[KEY_CORE][KEY_FRAMEWORK_VERSION] = cv.Version.parse(
-        config[CONF_FRAMEWORK][CONF_VERSION]
-    )
+    CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = []
+    confs = config[CONF_FRAMEWORK]
+    for conf in confs:
+        if FRAMEWORK_ESP_IDF in conf[CONF_TYPE]:
+            CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK].append("esp-idf")
+            CORE.data[KEY_ESP32][KEY_SDKCONFIG_OPTIONS] = {}
+        if FRAMEWORK_ARDUINO in conf[CONF_TYPE]:
+            CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK].append("arduino")
+        # Just set core FW version to last framework for now,...
+        CORE.data[KEY_CORE][KEY_FRAMEWORK_VERSION] = cv.Version.parse(
+            conf[CONF_VERSION]
+        )
     CORE.data[KEY_ESP32][KEY_BOARD] = config[CONF_BOARD]
     CORE.data[KEY_ESP32][KEY_VARIANT] = config[CONF_VARIANT]
     return config
@@ -294,7 +297,7 @@ CONFIG_SCHEMA = cv.All(
         {
             cv.Required(CONF_BOARD): cv.string_strict,
             cv.Optional(CONF_VARIANT): cv.one_of(*VARIANTS, upper=True),
-            cv.Optional(CONF_FRAMEWORK, default={}): FRAMEWORK_SCHEMA,
+            cv.Optional(CONF_FRAMEWORK, default={}): cv.ensure_list(FRAMEWORK_SCHEMA),
         }
     ),
     _detect_variant,
@@ -313,72 +316,73 @@ async def to_code(config):
 
     framework_ver: cv.Version = CORE.data[KEY_CORE][KEY_FRAMEWORK_VERSION]
 
-    conf = config[CONF_FRAMEWORK]
-    cg.add_platformio_option("platform", conf[CONF_PLATFORM_VERSION])
+    confs = config[CONF_FRAMEWORK]
+    for conf in confs:
+        cg.add_platformio_option("platform", conf[CONF_PLATFORM_VERSION])
 
-    cg.add_platformio_option("extra_scripts", ["post:post_build.py"])
+        cg.add_platformio_option("extra_scripts", ["post:post_build.py"])
 
-    if conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
-        cg.add_platformio_option("framework", "espidf")
-        cg.add_build_flag("-DUSE_ESP_IDF")
-        cg.add_build_flag("-DUSE_ESP32_FRAMEWORK_ESP_IDF")
-        cg.add_build_flag("-Wno-nonnull-compare")
-        cg.add_platformio_option(
-            "platform_packages",
-            [f"platformio/framework-espidf @ {conf[CONF_SOURCE]}"],
-        )
-        add_idf_sdkconfig_option("CONFIG_PARTITION_TABLE_SINGLE_APP", False)
-        add_idf_sdkconfig_option("CONFIG_PARTITION_TABLE_CUSTOM", True)
-        add_idf_sdkconfig_option(
-            "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME", "partitions.csv"
-        )
-        add_idf_sdkconfig_option("CONFIG_COMPILER_OPTIMIZATION_DEFAULT", False)
-        add_idf_sdkconfig_option("CONFIG_COMPILER_OPTIMIZATION_SIZE", True)
-
-        # Increase freertos tick speed from 100Hz to 1kHz so that delay() resolution is 1ms
-        add_idf_sdkconfig_option("CONFIG_FREERTOS_HZ", 1000)
-
-        # Setup watchdog
-        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT", True)
-        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_PANIC", True)
-        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0", False)
-        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1", False)
-
-        cg.add_platformio_option("board_build.partitions", "partitions.csv")
-
-        for name, value in conf[CONF_SDKCONFIG_OPTIONS].items():
-            add_idf_sdkconfig_option(name, RawSdkconfigValue(value))
-
-        if conf[CONF_ADVANCED][CONF_IGNORE_EFUSE_MAC_CRC]:
-            cg.add_define("USE_ESP32_IGNORE_EFUSE_MAC_CRC")
+        if conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
+            cg.add_platformio_option("framework", "espidf")
+            cg.add_build_flag("-DUSE_ESP_IDF")
+            cg.add_build_flag("-DUSE_ESP32_FRAMEWORK_ESP_IDF")
+            cg.add_build_flag("-Wno-nonnull-compare")
+            cg.add_platformio_option(
+                "platform_packages",
+                [f"platformio/framework-espidf @ {conf[CONF_SOURCE]}"],
+            )
+            add_idf_sdkconfig_option("CONFIG_PARTITION_TABLE_SINGLE_APP", False)
+            add_idf_sdkconfig_option("CONFIG_PARTITION_TABLE_CUSTOM", True)
             add_idf_sdkconfig_option(
-                "CONFIG_ESP32_PHY_CALIBRATION_AND_DATA_STORAGE", False
+                "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME", "partitions.csv"
+            )
+            add_idf_sdkconfig_option("CONFIG_COMPILER_OPTIMIZATION_DEFAULT", False)
+            add_idf_sdkconfig_option("CONFIG_COMPILER_OPTIMIZATION_SIZE", True)
+
+            # Increase freertos tick speed from 100Hz to 1kHz so that delay() resolution is 1ms
+            add_idf_sdkconfig_option("CONFIG_FREERTOS_HZ", 1000)
+
+            # Setup watchdog
+            add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT", True)
+            add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_PANIC", True)
+            add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0", False)
+            add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1", False)
+
+            cg.add_platformio_option("board_build.partitions", "partitions.csv")
+
+            for name, value in conf[CONF_SDKCONFIG_OPTIONS].items():
+                add_idf_sdkconfig_option(name, RawSdkconfigValue(value))
+
+            if conf[CONF_ADVANCED][CONF_IGNORE_EFUSE_MAC_CRC]:
+                cg.add_define("USE_ESP32_IGNORE_EFUSE_MAC_CRC")
+                add_idf_sdkconfig_option(
+                    "CONFIG_ESP32_PHY_CALIBRATION_AND_DATA_STORAGE", False
+                )
+
+            cg.add_define(
+                "USE_ESP_IDF_VERSION_CODE",
+                cg.RawExpression(
+                    f"VERSION_CODE({framework_ver.major}, {framework_ver.minor}, {framework_ver.patch})"
+                ),
             )
 
-        cg.add_define(
-            "USE_ESP_IDF_VERSION_CODE",
-            cg.RawExpression(
-                f"VERSION_CODE({framework_ver.major}, {framework_ver.minor}, {framework_ver.patch})"
-            ),
-        )
+        elif conf[CONF_TYPE] == FRAMEWORK_ARDUINO:
+            cg.add_platformio_option("framework", "arduino")
+            cg.add_build_flag("-DUSE_ARDUINO")
+            cg.add_build_flag("-DUSE_ESP32_FRAMEWORK_ARDUINO")
+            cg.add_platformio_option(
+                "platform_packages",
+                [f"platformio/framework-arduinoespressif32 @ {conf[CONF_SOURCE]}"],
+            )
 
-    elif conf[CONF_TYPE] == FRAMEWORK_ARDUINO:
-        cg.add_platformio_option("framework", "arduino")
-        cg.add_build_flag("-DUSE_ARDUINO")
-        cg.add_build_flag("-DUSE_ESP32_FRAMEWORK_ARDUINO")
-        cg.add_platformio_option(
-            "platform_packages",
-            [f"platformio/framework-arduinoespressif32 @ {conf[CONF_SOURCE]}"],
-        )
+            cg.add_platformio_option("board_build.partitions", "partitions.csv")
 
-        cg.add_platformio_option("board_build.partitions", "partitions.csv")
-
-        cg.add_define(
-            "USE_ARDUINO_VERSION_CODE",
-            cg.RawExpression(
-                f"VERSION_CODE({framework_ver.major}, {framework_ver.minor}, {framework_ver.patch})"
-            ),
-        )
+            cg.add_define(
+                "USE_ARDUINO_VERSION_CODE",
+                cg.RawExpression(
+                    f"VERSION_CODE({framework_ver.major}, {framework_ver.minor}, {framework_ver.patch})"
+                ),
+            )
 
 
 ARDUINO_PARTITIONS_CSV = """\

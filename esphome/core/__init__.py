@@ -600,11 +600,11 @@ class EsphomeCore:
 
     @property
     def using_arduino(self):
-        return self.target_framework == "arduino"
+        return "arduino" in self.target_framework
 
     @property
     def using_esp_idf(self):
-        return self.target_framework == "esp-idf"
+        return "esp-idf" in self.target_framework
 
     def add_job(self, func, *args, **kwargs):
         self.event_loop.add_job(func, *args, **kwargs)

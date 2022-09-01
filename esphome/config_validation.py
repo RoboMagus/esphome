@@ -1736,14 +1736,14 @@ def require_framework_version(
     def validator(value):
         core_data = CORE.data[KEY_CORE]
         framework = core_data[KEY_TARGET_FRAMEWORK]
-        if framework == "esp-idf":
+        if "esp-idf" in framework:
             if esp_idf is None:
                 msg = "This feature is incompatible with esp-idf"
                 if extra_message:
                     msg += f". {extra_message}"
                 raise Invalid(msg)
             required = esp_idf
-        elif CORE.is_esp32 and framework == "arduino":
+        elif CORE.is_esp32 and "arduino" in framework:
             if esp32_arduino is None:
                 msg = "This feature is incompatible with ESP32 using arduino framework"
                 if extra_message:
