@@ -43,16 +43,24 @@ _LOGGER = logging.getLogger(__name__)
 CODEOWNERS = ["@esphome/core"]
 AUTO_LOAD = ["preferences"]
 
+REAL_TARGET_FRAMEWORK = "real_target_framework"
+
 
 def set_core_data(config):
     CORE.data[KEY_ESP32] = {}
     CORE.data[KEY_CORE][KEY_TARGET_PLATFORM] = "esp32"
     conf = config[CONF_FRAMEWORK]
     if conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
+        CORE.data[KEY_CORE][REAL_TARGET_FRAMEWORK] = "esp-idf"
         CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = "esp-idf"
         CORE.data[KEY_ESP32][KEY_SDKCONFIG_OPTIONS] = {}
     elif conf[CONF_TYPE] == FRAMEWORK_ARDUINO:
+        CORE.data[KEY_CORE][REAL_TARGET_FRAMEWORK] = "arduino"
         CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = "arduino"
+    elif conf[CONF_TYPE] == FRAMEWORK_ARDUINO_IDF:
+        CORE.data[KEY_CORE][REAL_TARGET_FRAMEWORK] = "arduino-idf"
+        CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = "arduino"
+        CORE.data[KEY_ESP32][KEY_SDKCONFIG_OPTIONS] = {}
     CORE.data[KEY_CORE][KEY_FRAMEWORK_VERSION] = cv.Version.parse(
         config[CONF_FRAMEWORK][CONF_VERSION]
     )
@@ -99,7 +107,7 @@ SdkconfigValueType = Union[bool, int, HexInt, str, RawSdkconfigValue]
 
 def add_idf_sdkconfig_option(name: str, value: SdkconfigValueType):
     """Set an esp-idf sdkconfig value."""
-    if not CORE.using_esp_idf:
+    if CORE.data[KEY_CORE][REAL_TARGET_FRAMEWORK] == "arduino":
         raise ValueError("Not an esp-idf project")
     CORE.data[KEY_ESP32][KEY_SDKCONFIG_OPTIONS][name] = value
 
@@ -173,11 +181,22 @@ def _arduino_check_versions(value):
 
     if version != RECOMMENDED_ARDUINO_FRAMEWORK_VERSION:
         _LOGGER.warning(
-            "The selected Arduino framework version is not the recommended one. "
+            "The selected ESP-IDF framework version is not the recommended one. "
             "If there are connectivity or build issues please remove the manual version."
         )
 
     return value
+
+
+def _esp_arduino_idf_check_versions(value):
+    _LOGGER.warning(
+        "Using Arduino-IDF framework is experimental and not reccommended!"
+        "If there are connectivity or build issues please revert to either of the supported frameworks. (e.g. 'arduino' or 'esp-idf')"
+    )
+    _LOGGER.warning(
+        "If your build fails using Arduino-IDF framework, please explicitly clean your project before building again. Some modifications are not picked up correctly and may cause build failures..."
+    )
+    return _esp_idf_check_versions(value)
 
 
 def _esp_idf_check_versions(value):
@@ -275,13 +294,34 @@ ESP_IDF_FRAMEWORK_SCHEMA = cv.All(
     _esp_idf_check_versions,
 )
 
+ARDUINO_IDF_FRAMEWORK_SCHEMA = cv.All(
+    cv.Schema(
+        {
+            cv.Optional(CONF_VERSION, default="recommended"): cv.string_strict,
+            cv.Optional(CONF_SOURCE): cv.string_strict,
+            cv.Optional(CONF_PLATFORM_VERSION): _parse_platform_version,
+            cv.Optional(CONF_SDKCONFIG_OPTIONS, default={}): {
+                cv.string_strict: cv.string_strict
+            },
+            cv.Optional(CONF_ADVANCED, default={}): cv.Schema(
+                {
+                    cv.Optional(CONF_IGNORE_EFUSE_MAC_CRC, default=False): cv.boolean,
+                }
+            ),
+        }
+    ),
+    _esp_arduino_idf_check_versions,
+)
+
 
 FRAMEWORK_ESP_IDF = "esp-idf"
 FRAMEWORK_ARDUINO = "arduino"
+FRAMEWORK_ARDUINO_IDF = "arduino-idf"
 FRAMEWORK_SCHEMA = cv.typed_schema(
     {
         FRAMEWORK_ESP_IDF: ESP_IDF_FRAMEWORK_SCHEMA,
         FRAMEWORK_ARDUINO: ARDUINO_FRAMEWORK_SCHEMA,
+        FRAMEWORK_ARDUINO_IDF: ARDUINO_IDF_FRAMEWORK_SCHEMA,
     },
     lower=True,
     space="-",
@@ -316,7 +356,9 @@ async def to_code(config):
     conf = config[CONF_FRAMEWORK]
     cg.add_platformio_option("platform", conf[CONF_PLATFORM_VERSION])
 
-    cg.add_platformio_option("extra_scripts", ["post:post_build.py"])
+    cg.add_platformio_option(
+        "extra_scripts", ["pre:post_build.py", "post:post_build.py"]
+    )
 
     if conf[CONF_TYPE] == FRAMEWORK_ESP_IDF:
         cg.add_platformio_option("framework", "espidf")
@@ -380,6 +422,63 @@ async def to_code(config):
             ),
         )
 
+    elif conf[CONF_TYPE] == FRAMEWORK_ARDUINO_IDF:
+        # Currently hard-coded as it is known to work!
+        # ToDo: Make version configurable...
+        cg.add_platformio_option(
+            "platform",
+            "https://github.com/tasmota/platform-espressif32/releases/download/v2.0.4.1/platform-espressif32-2.0.4.1.zip",
+        )
+        cg.add_platformio_option("framework", "arduino, espidf")
+        cg.add_platformio_option("board_build.partitions", "partitions.csv")
+        cg.add_build_flag("-DUSE_ARDUINO")
+        cg.add_build_flag("-DUSE_ARDUINO_IDF")
+        cg.add_build_flag("-DUSE_ESP32_FRAMEWORK_ARDUINO")
+        cg.add_build_flag("-Wno-nonnull-compare")
+        cg.add_build_flag("-Wno-misleading-indentation")
+
+        add_idf_sdkconfig_option("CONFIG_PARTITION_TABLE_SINGLE_APP", False)
+        add_idf_sdkconfig_option("CONFIG_PARTITION_TABLE_CUSTOM", True)
+        add_idf_sdkconfig_option(
+            "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME", "partitions.csv"
+        )
+        add_idf_sdkconfig_option("CONFIG_COMPILER_OPTIMIZATION_DEFAULT", False)
+        add_idf_sdkconfig_option("CONFIG_COMPILER_OPTIMIZATION_SIZE", True)
+
+        # Increase freertos tick speed from 100Hz to 1kHz so that delay() resolution is 1ms
+        add_idf_sdkconfig_option("CONFIG_FREERTOS_HZ", 1000)
+
+        # Setup watchdog
+        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT", True)
+        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_PANIC", True)
+        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0", False)
+        add_idf_sdkconfig_option("CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1", False)
+
+        add_idf_sdkconfig_option("CONFIG_AUTOSTART_ARDUINO", True)
+
+        for name, value in conf[CONF_SDKCONFIG_OPTIONS].items():
+            add_idf_sdkconfig_option(name, RawSdkconfigValue(value))
+
+        if conf[CONF_ADVANCED][CONF_IGNORE_EFUSE_MAC_CRC]:
+            cg.add_define("USE_ESP32_IGNORE_EFUSE_MAC_CRC")
+            add_idf_sdkconfig_option(
+                "CONFIG_ESP32_PHY_CALIBRATION_AND_DATA_STORAGE", False
+            )
+
+        cg.add_define(
+            "USE_ESP_IDF_VERSION_CODE",
+            cg.RawExpression(
+                f"VERSION_CODE({framework_ver.major}, {framework_ver.minor}, {framework_ver.patch})"
+            ),
+        )
+
+        cg.add_define(
+            "USE_ARDUINO_VERSION_CODE",
+            cg.RawExpression(
+                f"VERSION_CODE({framework_ver.major}, {framework_ver.minor}, {framework_ver.patch})"
+            ),
+        )
+
 
 ARDUINO_PARTITIONS_CSV = """\
 nvs,      data, nvs,     0x009000, 0x005000,
@@ -398,6 +497,24 @@ otadata,  data, ota,     ,        0x2000,
 phy_init, data, phy,     ,        0x1000,
 app0,     app,  ota_0,   ,      0x1C0000,
 app1,     app,  ota_1,   ,      0x1C0000,
+"""
+
+
+ARDUINO_IDF_PARTITIONS_CSV = """\
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x009000, 0x005000,
+otadata,  data, ota,     0x00e000, 0x002000,
+app0,     app,  ota_0,   0x010000, 0x200000,
+app1,     app,  ota_1,   0x210000, 0x1F0000,
+"""
+
+ARDUINO_IDF_MD5_PATCH_PREFIX = """\
+// >>> ARDUINO-IDF-FIX:
+#ifdef USE_ARDUINO_IDF
+#define USE_ESP_IDF
+#undef USE_ARDUINO
+#endif
+// <<< ARDUINO-IDF-FIX
 """
 
 
@@ -438,12 +555,32 @@ def _write_sdkconfig():
 
 # Called by writer.py
 def copy_files():
-    if CORE.using_arduino:
+    if CORE.data[KEY_CORE][REAL_TARGET_FRAMEWORK] == "arduino-idf":
+        _write_sdkconfig()
+        write_file_if_changed(
+            CORE.relative_build_path("partitions.csv"),
+            ARDUINO_IDF_PARTITIONS_CSV,
+        )
+        # IDF build scripts look for version string to put in the build.
+        # However, if the build path does not have an initialized git repo,
+        # and no version.txt file exists, the CMake script fails for some setups.
+        # Fix by manually pasting a version.txt file, containing the ESPHome version
+        write_file_if_changed(
+            CORE.relative_build_path("version.txt"),
+            __version__,
+        )
+
+        MD5_Cpp = CORE.relative_build_path("src/esphome/components/md5/md5.cpp")
+        with open(MD5_Cpp) as original:
+            md5_cpp_content = original.read()
+        write_file_if_changed(MD5_Cpp, ARDUINO_IDF_MD5_PATCH_PREFIX + md5_cpp_content)
+
+    elif CORE.using_arduino:
         write_file_if_changed(
             CORE.relative_build_path("partitions.csv"),
             ARDUINO_PARTITIONS_CSV,
         )
-    if CORE.using_esp_idf:
+    elif CORE.using_esp_idf:
         _write_sdkconfig()
         write_file_if_changed(
             CORE.relative_build_path("partitions.csv"),
