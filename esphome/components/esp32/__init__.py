@@ -181,7 +181,7 @@ def _arduino_check_versions(value):
 
     if version != RECOMMENDED_ARDUINO_FRAMEWORK_VERSION:
         _LOGGER.warning(
-            "The selected ESP-IDF framework version is not the recommended one. "
+            "The selected Arduino framework version is not the recommended one. "
             "If there are connectivity or build issues please remove the manual version."
         )
 
@@ -278,9 +278,9 @@ CONF_SDKCONFIG_OPTIONS = "sdkconfig_options"
 ESP_IDF_FRAMEWORK_SCHEMA = cv.All(
     cv.Schema(
         {
-            cv.Optional(CONF_VERSION, default="recommended"): cv.string_strict,
-            cv.Optional(CONF_SOURCE): cv.string_strict,
-            cv.Optional(CONF_PLATFORM_VERSION): _parse_platform_version,
+            cv.Required(CONF_VERSION): cv.string_strict,
+            cv.Required(CONF_SOURCE): cv.string_strict,
+            cv.Required(CONF_PLATFORM_VERSION): _parse_platform_version,
             cv.Optional(CONF_SDKCONFIG_OPTIONS, default={}): {
                 cv.string_strict: cv.string_strict
             },
