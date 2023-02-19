@@ -64,6 +64,7 @@ class Soehnle_AC500 : public Component, public ble_client::BLEClientNode {
   void set_filter_sensor(sensor::Sensor *filter) { filter_sensor_ = filter; }
   void set_temperature_sensor(sensor::Sensor *temperature) { temperature_sensor_ = temperature; }
   void set_particulate_sensor(sensor::Sensor *particulate) { particulate_sensor_ = particulate; }
+  void set_power_sensor(sensor::Sensor *power_sensor) { power_sensor_ = power_sensor; }
   void set_raw_sensor(text_sensor::TextSensor *raw) { raw_sensor_ = raw; }
 
   void set_power_switch(DeviceSwitch *power) {
@@ -117,6 +118,7 @@ class Soehnle_AC500 : public Component, public ble_client::BLEClientNode {
   sensor::Sensor *filter_sensor_{nullptr};
   sensor::Sensor *temperature_sensor_{nullptr};
   sensor::Sensor *particulate_sensor_{nullptr};
+  sensor::Sensor *power_sensor_{nullptr};
 
   text_sensor::TextSensor *raw_sensor_{nullptr};
 

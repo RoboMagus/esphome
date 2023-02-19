@@ -10,6 +10,10 @@ static const char *const TAG = "soehnle_ac";
 static const char *fan_states[] = {"low", "medium", "high", "turbo"};
 static const char *timer_states[] = {"off", "2hours", "4hours", "8hours"};
 
+// Estimated power usage LUT in Watts for Low, Medium, High, Turbo respectively
+static const float fan_power_estimates[] = {4.5f, 12.5f, 26.5f, 53.0f};
+static const float uvc_power_estimate = 5.0f;
+
 uint8_t getTimerStrIdx(uint8_t value) {
   int idx = 0;
   while (value >>= 1)
@@ -200,6 +204,22 @@ void Soehnle_AC500::parseLiveData(uint8_t *bArr, uint16_t value_len) {
   }
   if (this->timer_select_ != nullptr && this->timer_select_->state != timer_str) {
     this->timer_select_->publish_state(timer_str);
+  }
+
+  // Calculate estimated power draw
+  if (this->power_sensor_ != nullptr) {
+    float estimatedPower = 0.0f;
+    if (isPowerOn) {
+      estimatedPower = fan_power_estimates[bArr[4]];
+
+      if (isUvcOn) {
+        estimatedPower += uvc_power_estimate;
+      }
+    }
+
+    if (this->power_sensor_->get_raw_state() != estimatedPower) {
+      this->power_sensor_->publish_state(estimatedPower);
+    }
   }
 }
 
