@@ -8,6 +8,14 @@ namespace soehnle_air_connect {
 
 static const char *const TAG = "soehnle_ac";
 static const char *fan_states[] = {"low", "medium", "high", "turbo"};
+static const char *timer_states[] = {"off", "2hours", "4hours", "8hours"};
+
+uint8_t getTimerStrIdx(uint8_t value) {
+  int idx = 0;
+  while (value >>= 1)
+    ++idx;
+  return idx;
+}
 
 void Soehnle_AC500::setup() {
   if (this->connected_sensor_ != nullptr) {
@@ -135,12 +143,12 @@ void Soehnle_AC500::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
 }
 
 void Soehnle_AC500::parseLiveData(uint8_t *bArr, uint16_t value_len) {
+  std::string rawValue = format_hex_pretty(bArr, value_len);
+
   // No 0, 1, 2
   uint8_t aqi = bArr[3];
-  uint8_t fanSpeed = bArr[4];
-  uint8_t timer = bArr[5];
-
-  const char *fanSpeed_str = fan_states[fanSpeed];
+  const char *fanSpeed_str = fan_states[bArr[4]];
+  const char *timer_str = timer_states[getTimerStrIdx(bArr[5])];
 
   bool isPowerOn = bArr[6] & 0x01;   // 7
   bool isUvcOn = bArr[6] & 0x02;     // 6
@@ -168,10 +176,16 @@ void Soehnle_AC500::parseLiveData(uint8_t *bArr, uint16_t value_len) {
   if (this->particulate_sensor_ != nullptr && this->particulate_sensor_->get_raw_state() != pmValue) {
     this->particulate_sensor_->publish_state(pmValue);
   }
+  if (this->raw_sensor_ != nullptr && this->raw_sensor_->get_raw_state() != rawValue) {
+    this->raw_sensor_->publish_state(rawValue);
+  }
 
   // Publish Switches
   if (this->power_switch_ != nullptr && this->power_switch_->state != isPowerOn) {
     this->power_switch_->publish_state(isPowerOn);
+  }
+  if (this->auto_switch_ != nullptr && this->auto_switch_->state != isAutoOn) {
+    this->auto_switch_->publish_state(isAutoOn);
   }
   if (this->beeper_switch_ != nullptr && this->beeper_switch_->state != isBuzzerOn) {
     this->beeper_switch_->publish_state(isBuzzerOn);
@@ -183,6 +197,9 @@ void Soehnle_AC500::parseLiveData(uint8_t *bArr, uint16_t value_len) {
   // Publish Selects
   if (this->fanspeed_select_ != nullptr && this->fanspeed_select_->state != fanSpeed_str) {
     this->fanspeed_select_->publish_state(fanSpeed_str);
+  }
+  if (this->timer_select_ != nullptr && this->timer_select_->state != timer_str) {
+    this->timer_select_->publish_state(timer_str);
   }
 }
 
@@ -213,6 +230,10 @@ void Soehnle_AC500::set_power(bool on) {
   ESP_LOGD(TAG, "Send Power command:  %s ", on ? "on" : "off");
   write_command_(1, 0, on, 4 + on);
 }
+void Soehnle_AC500::set_auto(bool on) {
+  ESP_LOGD(TAG, "Send Auto command:  %s ", on ? "on" : "off");
+  write_command_(5, 0, on, 8 + on);
+}
 void Soehnle_AC500::set_beeper(bool on) {
   ESP_LOGD(TAG, "Send Beeper command:  %s ", on ? "on" : "off");
   write_command_(8, 0, on, 11 + on);
@@ -235,6 +256,16 @@ void Soehnle_AC500::set_timer(uint8_t hr) {
   }
 }
 
+void Soehnle_AC500::set_timer_str(const std::string &hr_str) {
+  for (uint8_t i = 0; i < sizeof(timer_states); i++) {
+    if (hr_str.compare(timer_states[i]) == 0) {
+      uint8_t hours = (i > 0) ? (1 << i) : (0);
+      set_timer(hours);
+      break;
+    }
+  }
+}
+
 // ToDo: Add auto logic disable when changing fan speeds
 void Soehnle_AC500::set_fan(uint8_t speed) {
   // 0: Low
@@ -244,6 +275,10 @@ void Soehnle_AC500::set_fan(uint8_t speed) {
   if (speed < 4) {
     ESP_LOGD(TAG, "Send SetFan command:  %d ", speed);
     write_command_(2, 0, speed, 5 + speed);
+    // Auto disabled: reflect in switch state:
+    if (this->auto_switch_ != nullptr && this->auto_switch_->state == true) {
+      this->auto_switch_->publish_state(false);
+    }
   } else {
     ESP_LOGW(TAG, "Invalid SetFan command:  %d ", speed);
   }

@@ -11,6 +11,7 @@
 #include "esphome/components/select/select.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/switch/switch.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 
@@ -63,10 +64,15 @@ class Soehnle_AC500 : public Component, public ble_client::BLEClientNode {
   void set_filter_sensor(sensor::Sensor *filter) { filter_sensor_ = filter; }
   void set_temperature_sensor(sensor::Sensor *temperature) { temperature_sensor_ = temperature; }
   void set_particulate_sensor(sensor::Sensor *particulate) { particulate_sensor_ = particulate; }
+  void set_raw_sensor(text_sensor::TextSensor *raw) { raw_sensor_ = raw; }
 
   void set_power_switch(DeviceSwitch *power) {
     power_switch_ = power;
     power->set_write_state([this](bool state) { this->set_power(state); });
+  }
+  void set_auto_switch(DeviceSwitch *auto_switch) {
+    auto_switch_ = auto_switch;
+    auto_switch->set_write_state([this](bool state) { this->set_auto(state); });
   }
   void set_beeper_switch(DeviceSwitch *beeper) {
     beeper_switch_ = beeper;
@@ -82,12 +88,19 @@ class Soehnle_AC500 : public Component, public ble_client::BLEClientNode {
     fan->set_control([this](const std::string &value) { this->set_fan_str(value); });
   }
 
+  void set_timer_select(DeviceSelect *timer) {
+    timer_select_ = timer;
+    timer->set_control([this](const std::string &value) { this->set_timer_str(value); });
+  }
+
   void set_power(bool on);
+  void set_auto(bool on);
   void set_beeper(bool on);
   void set_UV_C(bool on);
   void set_Night_Mode(bool on);
 
   void set_timer(uint8_t hr);
+  void set_timer_str(const std::string &hr_str);
   // ToDo: Add auto logic disable when changing fan speeds
   void set_fan(uint8_t speed);
   void set_fan_str(const std::string &speed_str);
@@ -105,11 +118,15 @@ class Soehnle_AC500 : public Component, public ble_client::BLEClientNode {
   sensor::Sensor *temperature_sensor_{nullptr};
   sensor::Sensor *particulate_sensor_{nullptr};
 
+  text_sensor::TextSensor *raw_sensor_{nullptr};
+
   DeviceSwitch *power_switch_{nullptr};
+  DeviceSwitch *auto_switch_{nullptr};
   DeviceSwitch *beeper_switch_{nullptr};
   DeviceSwitch *uvc_switch_{nullptr};
 
   DeviceSelect *fanspeed_select_{nullptr};
+  DeviceSelect *timer_select_{nullptr};
 
   uint16_t read_handle_;
   uint16_t r3_handle_;
