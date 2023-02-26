@@ -1,6 +1,10 @@
 #include "soehnle_ac500.h"
 #include "esphome/core/helpers.h"
 
+#ifdef USE_OTA
+#include "esphome/components/ota/ota_component.h"
+#endif
+
 #ifdef USE_ESP32
 
 namespace esphome {
@@ -25,6 +29,16 @@ void Soehnle_AC500::setup() {
   if (this->connected_sensor_ != nullptr) {
     this->connected_sensor_->state = false;
   }
+
+#ifdef USE_OTA
+  ota::global_ota_component->add_on_state_callback([this](ota::OTAState state, float progress, uint8_t error) {
+    if (state == ota::OTA_STARTED) {
+      this->parent()->set_enabled(false);
+    } else if (state == ota::OTA_ERROR) {
+      this->parent()->set_enabled(true);
+    }
+  });
+#endif
 }
 
 void Soehnle_AC500::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
@@ -163,6 +177,9 @@ void Soehnle_AC500::parseLiveData(uint8_t *bArr, uint16_t value_len) {
   bool isNightModeOn = bArr[6] & 0x40;  // 1
 
   float pmValue = ((bArr[7] << 8) | bArr[8]) / 10.0f;
+  if (!isPowerOn) {  // Pm readings invalid when device power is off
+    pmValue = NAN;
+  }
 
   float temperatureValue = ((bArr[9] << 8) | bArr[10]) / 10.0f;
 
