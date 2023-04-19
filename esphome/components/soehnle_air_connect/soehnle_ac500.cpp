@@ -33,12 +33,17 @@ void Soehnle_AC500::setup() {
 #ifdef USE_OTA
   ota::global_ota_component->add_on_state_callback([this](ota::OTAState state, float progress, uint8_t error) {
     if (state == ota::OTA_STARTED) {
+      ESP_LOGW(TAG, "Disable & Disconnect for OTA");
+      this->parent()->disconnect();
       this->parent()->set_enabled(false);
     } else if (state == ota::OTA_ERROR) {
       this->parent()->set_enabled(true);
+      this->parent()->connect();
     }
   });
 #endif
+
+  // ToDo: Initial update for all sensors in case device won't connect...
 }
 
 void Soehnle_AC500::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
@@ -194,7 +199,7 @@ void Soehnle_AC500::parseLiveData(uint8_t *bArr, uint16_t value_len) {
   if (this->temperature_sensor_ != nullptr && this->temperature_sensor_->get_raw_state() != temperatureValue) {
     this->temperature_sensor_->publish_state(temperatureValue);
   }
-  if (this->particulate_sensor_ != nullptr && this->particulate_sensor_->get_raw_state() != pmValue) {
+  if (this->particulate_sensor_ != nullptr && this->particulate_sensor_->get_raw_state() != pmValue && isPowerOn) {
     this->particulate_sensor_->publish_state(pmValue);
   }
   if (this->raw_sensor_ != nullptr && this->raw_sensor_->get_raw_state() != rawValue) {
