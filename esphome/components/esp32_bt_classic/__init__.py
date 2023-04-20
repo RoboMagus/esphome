@@ -71,17 +71,13 @@ async def bt_classic_scan_to_code(config, action_id, template_arg, args):
     var = cg.new_Pvariable(action_id, template_arg, paren)
 
     addr = config[CONF_MAC_ADDRESS]
-    _LOGGER.warning("Scan addresses: %s", addr)
     if cg.is_template(addr):
-        templ = await cg.templatable(
-            addr, args, cg.std_vector.template(cg.global_ns.namespace("esp_bd_addr_t"))
-        )
+        templ = await cg.templatable(addr, args, cg.std_vector.template(cg.std_string))
         cg.add(var.set_addr_template(templ))
     else:
         addr_list = []
         for it in addr:
             addr_list.append(it.as_hex)
-        _LOGGER.warning("Scan addresses list: %s", addr_list)
         cg.add(var.set_addr_simple(addr_list))
 
     if CONF_DELAY in config:

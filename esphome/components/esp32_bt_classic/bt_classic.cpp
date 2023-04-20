@@ -20,8 +20,6 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
-static const char *const TAG = "esp32_bt_classic";
-
 float ESP32BtClassic::get_setup_priority() const {
   // Setup just after BLE, (but before AFTER_BLUETOOTH) to ensure both can co-exist!
   return setup_priority::BLUETOOTH - 5.0f;

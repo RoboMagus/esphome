@@ -11,8 +11,6 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
-static const char *const TAG = "esp32_bt_automation";
-
 class BtClassicScannerNode : public BtClassicNode {
  public:
   BtClassicScannerNode(ESP32BtClassic *bt_client) {
@@ -22,16 +20,28 @@ class BtClassicScannerNode : public BtClassicNode {
 
   void set_scan_delay(uint32_t delay) { this->scan_delay_ = delay; }
 
-  void scan(const std::vector<bt_mac_addr> &value) {
-    currentScan.insert(currentScan.end(), value.begin(), value.end());
-    ESP_LOGD(TAG, "BtClassicScannerNode::scan()");
-    parent()->startScan(currentScan.front().addr);
+  void scan(const BtMacAddrVector &value, uint8_t num_scans = 0) {
+    for (const auto &v : value) {
+      if (v.isValid()) {
+        ESP_LOGV(TAG, "Adding '%02X:%02X:%02X:%02X:%02X:%02X' to scan list", EXPAND_MAC_F(v.addr));
+        currentScan.push_back(bt_scan_item(v.addr, num_scans));
+      } else {
+        ESP_LOGE(TAG, "Invalid MAC address!! %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(v.addr));
+      }
+    }
+
+    if (!currentScan.empty()) {
+      ESP_LOGD(TAG, "BtClassicScannerNode::scan()");
+      parent()->startScan(currentScan.front().address);
+    } else {
+      ESP_LOGE(TAG, "Requested scan with empty address list!!");
+    }
   }
 
   void loop() {
     uint32_t now = millis();
     if (!currentScan.empty() && (now + scan_delay_) > last_scan_ms) {
-      parent()->startScan(currentScan.front().addr);
+      parent()->startScan(currentScan.front().address);
       last_scan_ms = now;
     }
   }
@@ -42,7 +52,7 @@ class BtClassicScannerNode : public BtClassicNode {
   ESP32BtClassic *bt_client_;
   uint32_t scan_delay_{};
   uint32_t last_scan_ms{};
-  std::vector<bt_mac_addr> currentScan{};
+  std::vector<bt_scan_item> currentScan{};
 };
 
 template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, public BtClassicScannerNode {
@@ -54,26 +64,27 @@ template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, publi
     if (has_simple_value_) {
       return scan(this->value_simple_);
     } else {
-      return scan(this->value_template_(x...));
+      BtMacAddrVector template_results = this->value_template_(x...);
+      return scan(template_results);
     }
   }
 
-  void set_addr_template(std::function<std::vector<bt_mac_addr>(Ts...)> func) {
-    ESP_LOGI(TAG, "set_addr_template()");
+  void set_addr_template(std::function<std::vector<std::string>(Ts...)> func) {
+    ESP_LOGV(TAG, "set_addr_template()");
     this->value_template_ = std::move(func);
     has_simple_value_ = false;
   }
 
-  void set_addr_simple(const std::vector<bt_mac_addr> &addr) {
-    ESP_LOGI(TAG, "set_addr_simple added %d", addr.size());
+  void set_addr_simple(const BtMacAddrVector &addr) {
+    ESP_LOGV(TAG, "set_addr_simple added %d", addr.size());
     this->value_simple_ = addr;
     has_simple_value_ = true;
   }
 
  private:
   bool has_simple_value_ = true;
-  std::vector<bt_mac_addr> value_simple_;
-  std::function<std::vector<bt_mac_addr>(Ts...)> value_template_{};
+  BtMacAddrVector value_simple_;
+  std::function<std::vector<std::string>(Ts...)> value_template_{};
 };
 
 }  // namespace esp32_bt_classic

@@ -3,6 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/defines.h"
 #include "esphome/core/helpers.h"
+#include "esphome/core/log.h"
 
 #include "esphome/components/esp32_ble/queue.h"
 
@@ -22,6 +23,8 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
+static const char *const TAG = "esp32_bt_classic";
+
 class ESP32BtClassic;
 
 class GAPEventHandler {
@@ -37,7 +40,10 @@ struct BtGapEvent {
 
 class bt_mac_addr {
  public:
-  bt_mac_addr(const esp_bd_addr_t &address) { memcpy(addr, address, sizeof(esp_bd_addr_t)); }
+  bt_mac_addr(const esp_bd_addr_t &address) {
+    memcpy(addr, address, sizeof(esp_bd_addr_t));
+    ESP_LOGV(TAG, "Created mac_addr : %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
+  }
   bt_mac_addr(uint64_t address) {
     uint8_t *s = (uint8_t *) &address;
     uint8_t *d = addr;
@@ -45,10 +51,12 @@ class bt_mac_addr {
     for (int i = 5; i >= 0; i--) {
       d[i] = s[5 - i];
     }
+    ESP_LOGV(TAG, "Created mac_addr from U64 : %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
   }
-  bt_mac_addr(const char *address) {
+  bt_mac_addr(const char *address) : addr{0} {
     esp_bd_addr_t mac;
     if (strlen(address) < 12 || strlen(address) > 18) {
+      ESP_LOGE(TAG, "Invalid string length for MAC address. Got '%s'", address);
       return;
     }
 
@@ -58,6 +66,7 @@ class bt_mac_addr {
                             &p[2], &p[3], &p[4], &p[5]);
     if (args_found == 6) {
       memcpy(addr, mac, sizeof(esp_bd_addr_t));
+      ESP_LOGV(TAG, "Created mac_addr from string : %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
       return;
     }
 
@@ -67,15 +76,26 @@ class bt_mac_addr {
 
     if (args_found == 6) {
       memcpy(addr, mac, sizeof(esp_bd_addr_t));
+      ESP_LOGV(TAG, "Created mac_addr from string : %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
       return;
     }
 
     // Invalid MAC
+    ESP_LOGE(TAG, "Invalid MAC address. Got '%s'", address);
     return;
   }
+  bt_mac_addr(const std::string &address) { bt_mac_addr(address.c_str()); }
 
   bool operator==(const bt_mac_addr &rhs) { return 0 == memcmp(addr, rhs.addr, sizeof(addr)); }
   bool operator==(const esp_bd_addr_t &rhs) { return 0 == memcmp(addr, rhs, sizeof(addr)); }
+
+  bool isValid() const {
+    for (uint8_t i = 0; i < ESP_BD_ADDR_LEN; i++) {
+      if (addr[i] != 0)
+        return true;
+    }
+    return false;
+  }
 
   // operator esp_bd_addr_t() {
   //   return addr;
@@ -83,6 +103,55 @@ class bt_mac_addr {
 
   // protected:
   esp_bd_addr_t addr;
+};
+
+class BtMacAddrVector : private std::vector<bt_mac_addr> {
+  typedef std::vector<bt_mac_addr> vector;
+
+ public:
+  using vector::push_back;
+  using vector::operator[];
+  using vector::begin;
+  using vector::end;
+  using vector::size;
+  BtMacAddrVector() {}
+  BtMacAddrVector(std::initializer_list<bt_mac_addr> init) : vector(init) {}
+  BtMacAddrVector(const std::vector<std::string> &strVec) {
+    for (const auto &str : strVec) {
+      push_back(str);
+    }
+  }
+
+  virtual ~BtMacAddrVector() {}
+
+  // Overloaded assignments
+  BtMacAddrVector &operator=(const std::vector<bt_mac_addr> &rhs) {
+    for (const auto &addr : rhs) {
+      push_back(addr);
+    }
+    return *this;
+  }
+  BtMacAddrVector &operator=(const std::vector<std::string> &rhs) {
+    for (const auto &str : rhs) {
+      push_back(str);
+    }
+    return *this;
+  }
+  BtMacAddrVector &operator=(const std::vector<uint64_t> &rhs) {
+    for (const auto &u64 : rhs) {
+      push_back(u64);
+    }
+    return *this;
+  }
+};
+
+struct bt_scan_item {
+  bt_scan_item(const esp_bd_addr_t &addr, uint8_t num_scans) {
+    memcpy(address, addr, sizeof(esp_bd_addr_t));
+    scans_remaining = num_scans;
+  }
+  esp_bd_addr_t address;
+  uint8_t scans_remaining;
 };
 
 class BtClassicNode {
