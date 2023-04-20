@@ -87,6 +87,29 @@ template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, publi
   std::function<std::vector<std::string>(Ts...)> value_template_{};
 };
 
+class BtClassicScanResultTrigger : public Trigger<const rmt_name_result &>, public BtClassicScanResultListner {
+ public:
+  explicit BtClassicScanResultTrigger(ESP32BtClassic *parent) { parent->register_listener(this); }
+  void set_address(uint64_t address) { this->address_ = address; }
+
+  bool on_scan_result(const rmt_name_result &result) override {
+    // struct read_rmt_name_param {
+    //   esp_bt_status_t stat;                            /*!< read Remote Name status */
+    //   uint8_t rmt_name[ESP_BT_GAP_MAX_BDNAME_LEN + 1]; /*!< Remote device name */
+    //   esp_bd_addr_t bda;                               /*!< remote bluetooth device address*/
+    // } read_rmt_name;
+
+    if (this->address_ && bt_mac_addr(result.bda) != bt_mac_addr(this->address_)) {
+      return false;
+    }
+    this->trigger(result);
+    return true;
+  }
+
+ protected:
+  uint64_t address_ = 0;
+};
+
 }  // namespace esp32_bt_classic
 }  // namespace esphome
 

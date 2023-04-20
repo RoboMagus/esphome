@@ -2,7 +2,7 @@ import logging
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.const import CONF_DELAY, CONF_ID, CONF_MAC_ADDRESS
+from esphome.const import CONF_DELAY, CONF_ID, CONF_MAC_ADDRESS, CONF_TRIGGER_ID
 from esphome.core import CORE
 from esphome import automation
 from esphome.components.esp32 import add_idf_sdkconfig_option, get_esp32_variant, const
@@ -14,7 +14,7 @@ DEPENDENCIES = ["esp32"]
 CODEOWNERS = ["@RoboMagus"]
 CONFLICTS_WITH = ["esp32_ble_beacon"]
 
-CONF_BLE_ID = "ble_id"
+CONF_ON_SCAN_RESULT = "on_scan_result"
 
 NO_BLUTOOTH_VARIANTS = [const.VARIANT_ESP32S2]
 
@@ -24,17 +24,32 @@ MIN_ARDUINO_VERSION = cv.Version(2, 0, 6)
 esp32_bt_classic_ns = cg.esphome_ns.namespace("esp32_bt_classic")
 ESP32BtClassic = esp32_bt_classic_ns.class_("ESP32BtClassic", cg.Component)
 
+RMT_NAME_RESULT = esp32_bt_classic_ns.class_("rmt_name_result")
+RMT_NAME_RESULTConstRef = RMT_NAME_RESULT.operator("ref").operator("const")
+
 GAPEventHandler = esp32_bt_classic_ns.class_("GAPEventHandler")
 
 # Actions
 BtClassicScanAction = esp32_bt_classic_ns.class_(
     "BtClassicScanAction", automation.Action
 )
+# Triggers
+BtClassicScanResultTrigger = esp32_bt_classic_ns.class_(
+    "BtClassicScanResultTrigger", automation.Trigger.template(RMT_NAME_RESULTConstRef)
+)
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(ESP32BtClassic),
+            cv.Optional(CONF_ON_SCAN_RESULT): automation.validate_automation(
+                {
+                    cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
+                        BtClassicScanResultTrigger
+                    ),
+                    cv.Optional(CONF_MAC_ADDRESS): cv.mac_address,
+                }
+            ),
         }
     ).extend(cv.COMPONENT_SCHEMA),
     cv.require_framework_version(
@@ -89,6 +104,14 @@ async def bt_classic_scan_to_code(config, action_id, template_arg, args):
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
+
+    for conf in config.get(CONF_ON_SCAN_RESULT, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        if CONF_MAC_ADDRESS in conf:
+            cg.add(trigger.set_address(conf[CONF_MAC_ADDRESS].as_hex))
+        await automation.build_automation(
+            trigger, [(RMT_NAME_RESULTConstRef, "x")], conf
+        )
 
     if CORE.using_esp_idf:
         add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)

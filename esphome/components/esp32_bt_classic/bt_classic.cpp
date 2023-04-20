@@ -20,6 +20,12 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
+std::string addr2str(const esp_bd_addr_t &addr) {
+  char mac[24];
+  snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
+  return mac;
+}
+
 float ESP32BtClassic::get_setup_priority() const {
   // Setup just after BLE, (but before AFTER_BLUETOOTH) to ensure both can co-exist!
   return setup_priority::BLUETOOTH - 5.0f;
@@ -169,6 +175,10 @@ void ESP32BtClassic::handle_gap_event_internal(esp_bt_gap_cb_event_t event, esp_
       ESP_LOGI(TAG, "Read remote name result:\n  Stat: %s (%d)\n  Name: %s\n  Addr: %02X:%02X:%02X:%02X:%02X:%02X",
                esp_bt_status_to_str(param->read_rmt_name.stat), param->read_rmt_name.stat,
                param->read_rmt_name.rmt_name, EXPAND_MAC_F(param->read_rmt_name.bda));
+
+      for (auto *listener : this->result_listners_) {
+        listener->on_scan_result(param->read_rmt_name);
+      }
       break;
     }
     default: {

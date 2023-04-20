@@ -27,6 +27,10 @@ static const char *const TAG = "esp32_bt_classic";
 
 class ESP32BtClassic;
 
+typedef esp_bt_gap_cb_param_t::read_rmt_name_param rmt_name_result;
+
+std::string addr2str(const esp_bd_addr_t &addr);
+
 class GAPEventHandler {
  public:
   virtual void gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) = 0;
@@ -88,6 +92,8 @@ class bt_mac_addr {
 
   bool operator==(const bt_mac_addr &rhs) { return 0 == memcmp(addr, rhs.addr, sizeof(addr)); }
   bool operator==(const esp_bd_addr_t &rhs) { return 0 == memcmp(addr, rhs, sizeof(addr)); }
+
+  bool operator!=(const bt_mac_addr &rhs) { return !operator==(rhs); }
 
   bool isValid() const {
     for (uint8_t i = 0; i < ESP_BD_ADDR_LEN; i++) {
@@ -171,6 +177,15 @@ class BtClassicNode {
   ESP32BtClassic *parent_;
 };
 
+class BtClassicScanResultListner {
+ public:
+  virtual bool on_scan_result(const rmt_name_result &result) = 0;
+  void set_parent(ESP32BtClassic *parent) { parent_ = parent; }
+
+ protected:
+  ESP32BtClassic *parent_{nullptr};
+};
+
 class ESP32BtClassic : public Component {
  public:
   void setup() override;
@@ -181,6 +196,10 @@ class ESP32BtClassic : public Component {
   void register_gap_event_handler(GAPEventHandler *handler) { this->gap_event_handlers_.push_back(handler); }
 
   void register_node(BtClassicNode *node);
+  void register_listener(BtClassicScanResultListner *listner) {
+    listner->set_parent(this);
+    result_listners_.push_back(listner);
+  }
 
   void startScan(esp_bd_addr_t addr);
 
@@ -216,6 +235,7 @@ class ESP32BtClassic : public Component {
   app_gap_cb_t m_dev_info;
 
   std::vector<GAPEventHandler *> gap_event_handlers_;
+  std::vector<BtClassicScanResultListner *> result_listners_;
 
   esp32_ble::Queue<BtGapEvent> bt_events_;
 };

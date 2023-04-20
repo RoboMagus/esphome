@@ -5,6 +5,9 @@
 #define STRINGIZE(x) #x
 #define TABLE_ENTRY(x) x, #x
 
+namespace esphome {
+namespace esp32_bt_classic {
+
 static const esp_bt_status_msg_t esp_bt_status_msg_table[] = {
     TABLE_ENTRY(ESP_BT_STATUS_SUCCESS),
     TABLE_ENTRY(ESP_BT_STATUS_FAIL),
@@ -38,5 +41,8 @@ const char *esp_bt_status_to_str(esp_bt_status_t code) {
 
   return "Unknown Status";
 }
+
+}  // namespace esp32_bt_classic
+}  // namespace esphome
 
 #endif  // USE_ESP32
