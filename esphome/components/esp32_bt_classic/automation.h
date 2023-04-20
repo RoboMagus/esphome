@@ -11,6 +11,8 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
+static const char *const TAG = "esp32_bt_automation";
+
 class BtClassicScannerNode : public BtClassicNode {
  public:
   BtClassicScannerNode(ESP32BtClassic *bt_client) {
@@ -22,6 +24,8 @@ class BtClassicScannerNode : public BtClassicNode {
 
   void scan(const std::vector<bt_mac_addr> &value) {
     currentScan.insert(currentScan.end(), value.begin(), value.end());
+    ESP_LOGD(TAG, "BtClassicScannerNode::scan()");
+    parent()->startScan(currentScan.front().addr);
   }
 
   void loop() {
@@ -46,6 +50,7 @@ template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, publi
   BtClassicScanAction(ESP32BtClassic *bt_client) : BtClassicScannerNode(bt_client) {}
 
   void play(Ts... x) override {
+    ESP_LOGI(TAG, "BtClassicScanAction::play()");
     if (has_simple_value_) {
       return scan(this->value_simple_);
     } else {
@@ -54,11 +59,13 @@ template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, publi
   }
 
   void set_addr_template(std::function<std::vector<bt_mac_addr>(Ts...)> func) {
+    ESP_LOGI(TAG, "set_addr_template()");
     this->value_template_ = std::move(func);
     has_simple_value_ = false;
   }
 
   void set_addr_simple(const std::vector<bt_mac_addr> &addr) {
+    ESP_LOGI(TAG, "set_addr_simple added %d", addr.size());
     this->value_simple_ = addr;
     has_simple_value_ = true;
   }
