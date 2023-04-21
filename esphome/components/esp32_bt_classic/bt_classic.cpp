@@ -20,6 +20,26 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
+void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t bd_addr) {
+  bd_addr[0] = (address >> 40) & 0xff;
+  bd_addr[1] = (address >> 32) & 0xff;
+  bd_addr[2] = (address >> 24) & 0xff;
+  bd_addr[3] = (address >> 16) & 0xff;
+  bd_addr[4] = (address >> 8) & 0xff;
+  bd_addr[5] = (address >> 0) & 0xff;
+}
+
+uint64_t ble_addr_to_uint64(const esp_bd_addr_t address) {
+  uint64_t u = 0;
+  u |= uint64_t(address[0] & 0xFF) << 40;
+  u |= uint64_t(address[1] & 0xFF) << 32;
+  u |= uint64_t(address[2] & 0xFF) << 24;
+  u |= uint64_t(address[3] & 0xFF) << 16;
+  u |= uint64_t(address[4] & 0xFF) << 8;
+  u |= uint64_t(address[5] & 0xFF) << 0;
+  return u;
+}
+
 std::string addr2str(const esp_bd_addr_t &addr) {
   char mac[24];
   snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
@@ -134,17 +154,17 @@ bool ESP32BtClassic::gap_startup() {
 }
 
 void ESP32BtClassic::loop() {
+  // Loop all registered child nodes
+  for (auto *node : this->nodes_) {
+    node->loop();
+  }
+
   BtGapEvent *bt_event = this->bt_events_.pop();
   while (bt_event != nullptr) {
     this->real_gap_event_handler_(bt_event->event, &(bt_event->param));
     delete bt_event;  // NOLINT(cppcoreguidelines-owning-memory)
     bt_event = this->bt_events_.pop();
   }
-}
-
-void ESP32BtClassic::register_node(BtClassicNode *node) {
-  node->set_parent(this);
-  //  this->nodes_.push_back(node);
 }
 
 void ESP32BtClassic::startScan(esp_bd_addr_t addr) {
@@ -162,6 +182,9 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
   ESP_LOGV(TAG, "(BT) gap_event_handler - %d", event);
   for (auto *gap_handler : this->gap_event_handlers_) {
     gap_handler->gap_event_handler(event, param);
+  }
+  for (auto *node : this->nodes_) {
+    node->gap_event_handler(event, param);
   }
 
   // Internal handling:

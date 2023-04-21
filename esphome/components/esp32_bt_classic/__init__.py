@@ -2,7 +2,12 @@ import logging
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.const import CONF_DELAY, CONF_ID, CONF_MAC_ADDRESS, CONF_TRIGGER_ID
+from esphome.const import (
+    CONF_DELAY,
+    CONF_ID,
+    CONF_MAC_ADDRESS,
+    CONF_TRIGGER_ID,
+)
 from esphome.core import CORE
 from esphome import automation
 from esphome.components.esp32 import add_idf_sdkconfig_option, get_esp32_variant, const
@@ -14,6 +19,7 @@ DEPENDENCIES = ["esp32"]
 CODEOWNERS = ["@RoboMagus"]
 CONFLICTS_WITH = ["esp32_ble_beacon"]
 
+CONF_NUM_SCANS = "num_scans"
 CONF_ON_SCAN_RESULT = "on_scan_result"
 
 NO_BLUTOOTH_VARIANTS = [const.VARIANT_ESP32S2]
@@ -73,6 +79,7 @@ BT_CLASSIC_SCAN_ACTION_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_ID): cv.use_id(ESP32BtClassic),
         cv.Required(CONF_MAC_ADDRESS): cv.templatable(cv.ensure_list(cv.mac_address)),
+        cv.Optional(CONF_NUM_SCANS, default=1): cv.templatable(cv.positive_int),
         cv.Optional(CONF_DELAY, default="0s"): cv.positive_time_period_milliseconds,
     }
 )
@@ -94,6 +101,13 @@ async def bt_classic_scan_to_code(config, action_id, template_arg, args):
         for it in addr:
             addr_list.append(it.as_hex)
         cg.add(var.set_addr_simple(addr_list))
+
+    if CONF_NUM_SCANS in config:
+        if cg.is_template(config[CONF_NUM_SCANS]):
+            templ = await cg.templatable(config[CONF_NUM_SCANS], args, cg.uint16)
+            cg.add(var.set_num_scans_template(templ))
+        else:
+            cg.add(var.set_num_scans_simple(config[CONF_NUM_SCANS]))
 
     if CONF_DELAY in config:
         cg.add(var.set_scan_delay(config[CONF_DELAY]))

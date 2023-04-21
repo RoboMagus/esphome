@@ -23,11 +23,21 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
+// ToDo:
+// [x] Hook up nodes callback functions.
+// [ ] Refactor to use u64 based mac address (common among EspHome codebase)
+//     - u64 internal and convert to esp_bd_addr_t at the HAL
+// [ ] Refactor Automation Trigger interface into string status, string mac, and string name
+
 static const char *const TAG = "esp32_bt_classic";
 
 class ESP32BtClassic;
 
 typedef esp_bt_gap_cb_param_t::read_rmt_name_param rmt_name_result;
+
+// bd_addr_t <--> uint64_t conversion functions:
+void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t bd_addr);
+uint64_t ble_addr_to_uint64(const esp_bd_addr_t address);
 
 std::string addr2str(const esp_bd_addr_t &addr);
 
@@ -158,6 +168,7 @@ struct bt_scan_item {
   }
   esp_bd_addr_t address;
   uint8_t scans_remaining;
+  uint32_t next_scan_time;
 };
 
 class BtClassicNode {
@@ -195,7 +206,10 @@ class ESP32BtClassic : public Component {
 
   void register_gap_event_handler(GAPEventHandler *handler) { this->gap_event_handlers_.push_back(handler); }
 
-  void register_node(BtClassicNode *node);
+  void register_node(BtClassicNode *node) {
+    node->set_parent(this);
+    nodes_.push_back(node);
+  }
   void register_listener(BtClassicScanResultListner *listner) {
     listner->set_parent(this);
     result_listners_.push_back(listner);
@@ -235,6 +249,7 @@ class ESP32BtClassic : public Component {
   app_gap_cb_t m_dev_info;
 
   std::vector<GAPEventHandler *> gap_event_handlers_;
+  std::vector<BtClassicNode *> nodes_;
   std::vector<BtClassicScanResultListner *> result_listners_;
 
   esp32_ble::Queue<BtGapEvent> bt_events_;
