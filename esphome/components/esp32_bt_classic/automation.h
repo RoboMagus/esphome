@@ -131,9 +131,15 @@ template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, publi
   std::function<uint16_t(Ts...)> num_scans_template_{};
 };
 
+class BtClassicScanStartTrigger : public Trigger<>, public BtClassicScanStartListner {
+ public:
+  explicit BtClassicScanStartTrigger(ESP32BtClassic *parent) { parent->register_scan_start_listener(this); }
+  void on_scan_start() override { this->trigger(); }
+};
+
 class BtClassicScanResultTrigger : public Trigger<const rmt_name_result &>, public BtClassicScanResultListner {
  public:
-  explicit BtClassicScanResultTrigger(ESP32BtClassic *parent) { parent->register_listener(this); }
+  explicit BtClassicScanResultTrigger(ESP32BtClassic *parent) { parent->register_scan_result_listener(this); }
   void set_address(uint64_t address) { this->address_ = address; }
 
   bool on_scan_result(const rmt_name_result &result) override {

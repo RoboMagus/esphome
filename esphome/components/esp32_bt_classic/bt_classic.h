@@ -188,13 +188,22 @@ class BtClassicNode {
   ESP32BtClassic *parent_;
 };
 
+class BtClassicScanStartListner {
+ public:
+  virtual void on_scan_start() = 0;
+  void set_parent(ESP32BtClassic *parent) { parent_ = parent; }
+
+ protected:
+  ESP32BtClassic *parent_{nullptr};  // ToDo: Check if parent is actually needed?...
+};
+
 class BtClassicScanResultListner {
  public:
   virtual bool on_scan_result(const rmt_name_result &result) = 0;
   void set_parent(ESP32BtClassic *parent) { parent_ = parent; }
 
  protected:
-  ESP32BtClassic *parent_{nullptr};
+  ESP32BtClassic *parent_{nullptr};  // ToDo: Check if parent is actually needed?...
 };
 
 class ESP32BtClassic : public Component {
@@ -210,9 +219,13 @@ class ESP32BtClassic : public Component {
     node->set_parent(this);
     nodes_.push_back(node);
   }
-  void register_listener(BtClassicScanResultListner *listner) {
+  void register_scan_start_listener(BtClassicScanStartListner *listner) {
     listner->set_parent(this);
-    result_listners_.push_back(listner);
+    scan_start_listners_.push_back(listner);
+  }
+  void register_scan_result_listener(BtClassicScanResultListner *listner) {
+    listner->set_parent(this);
+    scan_result_listners_.push_back(listner);
   }
 
   void startScan(esp_bd_addr_t addr);
@@ -250,7 +263,8 @@ class ESP32BtClassic : public Component {
 
   std::vector<GAPEventHandler *> gap_event_handlers_;
   std::vector<BtClassicNode *> nodes_;
-  std::vector<BtClassicScanResultListner *> result_listners_;
+  std::vector<BtClassicScanStartListner *> scan_start_listners_;
+  std::vector<BtClassicScanResultListner *> scan_result_listners_;
 
   esp32_ble::Queue<BtGapEvent> bt_events_;
 };

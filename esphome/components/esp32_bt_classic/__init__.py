@@ -20,6 +20,7 @@ CODEOWNERS = ["@RoboMagus"]
 CONFLICTS_WITH = ["esp32_ble_beacon"]
 
 CONF_NUM_SCANS = "num_scans"
+CONF_ON_SCAN_START = "on_scan_start"
 CONF_ON_SCAN_RESULT = "on_scan_result"
 
 NO_BLUTOOTH_VARIANTS = [const.VARIANT_ESP32S2]
@@ -43,11 +44,21 @@ BtClassicScanAction = esp32_bt_classic_ns.class_(
 BtClassicScanResultTrigger = esp32_bt_classic_ns.class_(
     "BtClassicScanResultTrigger", automation.Trigger.template(RMT_NAME_RESULTConstRef)
 )
+BtClassicScanStartTrigger = esp32_bt_classic_ns.class_(
+    "BtClassicScanStartTrigger", automation.Trigger.template()
+)
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(ESP32BtClassic),
+            cv.Optional(CONF_ON_SCAN_START): automation.validate_automation(
+                {
+                    cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
+                        BtClassicScanStartTrigger
+                    )
+                }
+            ),
             cv.Optional(CONF_ON_SCAN_RESULT): automation.validate_automation(
                 {
                     cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
@@ -118,6 +129,10 @@ async def bt_classic_scan_to_code(config, action_id, template_arg, args):
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
+
+    for conf in config.get(CONF_ON_SCAN_START, []):
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
+        await automation.build_automation(trigger, [], conf)
 
     for conf in config.get(CONF_ON_SCAN_RESULT, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)

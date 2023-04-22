@@ -170,6 +170,10 @@ void ESP32BtClassic::loop() {
 void ESP32BtClassic::startScan(esp_bd_addr_t addr) {
   ESP_LOGD(TAG, "Start scanning for %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr), addr[5]);
 
+  for (auto *listener : this->scan_start_listners_) {
+    listener->on_scan_start();
+  }
+
   esp_bt_gap_read_remote_name(addr);
 }
 
@@ -199,7 +203,7 @@ void ESP32BtClassic::handle_gap_event_internal(esp_bt_gap_cb_event_t event, esp_
                esp_bt_status_to_str(param->read_rmt_name.stat), param->read_rmt_name.stat,
                param->read_rmt_name.rmt_name, EXPAND_MAC_F(param->read_rmt_name.bda));
 
-      for (auto *listener : this->result_listners_) {
+      for (auto *listener : this->scan_result_listners_) {
         listener->on_scan_result(param->read_rmt_name);
       }
       break;
