@@ -41,11 +41,6 @@ uint64_t ble_addr_to_uint64(const esp_bd_addr_t address);
 
 std::string addr2str(const esp_bd_addr_t &addr);
 
-class GAPEventHandler {
- public:
-  virtual void gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) = 0;
-};
-
 struct BtGapEvent {
   explicit BtGapEvent(esp_bt_gap_cb_event_t Event, esp_bt_gap_cb_param_t *Param) : event(Event), param(*Param) {}
   esp_bt_gap_cb_event_t event;
@@ -171,49 +166,39 @@ struct bt_scan_item {
   uint32_t next_scan_time;
 };
 
-class BtClassicNode {
+class BtClassicChildBase {
  public:
-  virtual void gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) = 0;
-  virtual void loop() {}
-
-  // This should be transitioned to Established once the node no longer needs
-  // the services/descriptors/characteristics of the parent client. This will
-  // allow some memory to be freed.
-  // espbt::ClientState node_state;
-
   ESP32BtClassic *parent() { return this->parent_; }
-  void set_parent(ESP32BtClassic *parent) { this->parent_ = parent; }
+  void set_parent(ESP32BtClassic *parent) { parent_ = parent; }
 
  protected:
-  ESP32BtClassic *parent_;
+  ESP32BtClassic *parent_{nullptr};  // ToDo: Check if parent is actually needed?...
 };
 
-class BtClassicScanStartListner {
+class BtClassicScanStartListner : public BtClassicChildBase {
  public:
   virtual void on_scan_start() = 0;
-  void set_parent(ESP32BtClassic *parent) { parent_ = parent; }
-
- protected:
-  ESP32BtClassic *parent_{nullptr};  // ToDo: Check if parent is actually needed?...
 };
 
-class BtClassicScanResultListner {
+class BtClassicScanResultListner : public BtClassicChildBase {
  public:
-  virtual bool on_scan_result(const rmt_name_result &result) = 0;
-  void set_parent(ESP32BtClassic *parent) { parent_ = parent; }
-
- protected:
-  ESP32BtClassic *parent_{nullptr};  // ToDo: Check if parent is actually needed?...
+  virtual void on_scan_result(const rmt_name_result &result) = 0;
 };
 
+class BtClassicNode : public BtClassicScanResultListner {
+ public:
+  virtual void loop() {}
+};
+
+// -----------------------------------------------
+// Main BT Classic class:
+//
 class ESP32BtClassic : public Component {
  public:
   void setup() override;
   void loop() override;
   void dump_config() override;
   float get_setup_priority() const override;
-
-  void register_gap_event_handler(GAPEventHandler *handler) { this->gap_event_handlers_.push_back(handler); }
 
   void register_node(BtClassicNode *node) {
     node->set_parent(this);
@@ -228,45 +213,33 @@ class ESP32BtClassic : public Component {
     scan_result_listners_.push_back(listner);
   }
 
-  void startScan(esp_bd_addr_t addr);
+  void addScan(const bt_scan_item &scan);
+  void addScan(const std::vector<bt_scan_item> &scan_list);
 
  protected:
   static void gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param);
-
   void real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param);
-  void handle_gap_event_internal(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param);
+
+  void startScan(esp_bd_addr_t addr);
+
+  void handle_scan_result(const rmt_name_result &result);
 
   bool bt_setup_();
-  void gap_init();
   bool gap_startup();
 
-  typedef enum {
-    APP_GAP_STATE_IDLE = 0,
-    APP_GAP_STATE_DEVICE_DISCOVERING,
-    APP_GAP_STATE_DEVICE_DISCOVER_COMPLETE,
-    APP_GAP_STATE_SERVICE_DISCOVERING,
-    APP_GAP_STATE_SERVICE_DISCOVER_COMPLETE,
-  } app_gap_state_t;
+  bool scanPending_{false};
+  uint32_t last_scan_ms{};
+  std::vector<bt_scan_item> active_scan_list_{};
 
-  typedef struct {
-    bool dev_found;
-    uint8_t bdname_len;
-    uint8_t eir_len;
-    uint8_t rssi;
-    uint32_t cod;
-    uint8_t eir[ESP_BT_GAP_EIR_DATA_LEN];
-    uint8_t bdname[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
-    esp_bd_addr_t bda;
-    app_gap_state_t state;
-  } app_gap_cb_t;
-  app_gap_cb_t m_dev_info;
-
-  std::vector<GAPEventHandler *> gap_event_handlers_;
+  // Listners a.o.
   std::vector<BtClassicNode *> nodes_;
   std::vector<BtClassicScanStartListner *> scan_start_listners_;
   std::vector<BtClassicScanResultListner *> scan_result_listners_;
 
+  // Ble-Queue which thread safety precautions:
   esp32_ble::Queue<BtGapEvent> bt_events_;
+
+  const uint32_t scan_delay_{100};  // (ms) minimal time between consecutive scans
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)

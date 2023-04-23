@@ -46,6 +46,12 @@ std::string addr2str(const esp_bd_addr_t &addr) {
   return mac;
 }
 
+template<typename T> void moveItemToBack(std::vector<T> &v, size_t itemIndex) {
+  T tmp(v[itemIndex]);
+  v.erase(v.begin() + itemIndex);
+  v.push_back(tmp);
+}
+
 float ESP32BtClassic::get_setup_priority() const {
   // Setup just after BLE, (but before AFTER_BLUETOOTH) to ensure both can co-exist!
   return setup_priority::BLUETOOTH - 5.0f;
@@ -125,29 +131,15 @@ bool ESP32BtClassic::bt_setup_() {
   return success;
 }
 
-void ESP32BtClassic::gap_init() {
-  app_gap_cb_t *p_dev = &m_dev_info;
-  memset(p_dev, 0, sizeof(app_gap_cb_t));
-}
-
 bool ESP32BtClassic::gap_startup() {
-  const char *dev_name = "ESP32_scanner";
-  esp_bt_dev_set_device_name(dev_name);
-
-  // inititialize device information and status
-  gap_init();
-
   // set discoverable and connectable mode, wait to be connected
   esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
 
   // register GAP callback function
-  // if (!this->gap_event_handlers_.empty()) {
-  {
-    esp_err_t err = esp_bt_gap_register_callback(ESP32BtClassic::gap_event_handler);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "esp_bt_gap_register_callback failed: %s", esp_err_to_name(err));
-      return false;
-    }
+  esp_err_t err = esp_bt_gap_register_callback(ESP32BtClassic::gap_event_handler);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "esp_bt_gap_register_callback failed: %s", esp_err_to_name(err));
+    return false;
   }
 
   return true;
@@ -159,22 +151,40 @@ void ESP32BtClassic::loop() {
     node->loop();
   }
 
+  // Handle GAP event queue
   BtGapEvent *bt_event = this->bt_events_.pop();
   while (bt_event != nullptr) {
     this->real_gap_event_handler_(bt_event->event, &(bt_event->param));
     delete bt_event;  // NOLINT(cppcoreguidelines-owning-memory)
     bt_event = this->bt_events_.pop();
   }
+
+  // Process scanning queue
+  if (!active_scan_list_.empty() && (millis() + scan_delay_) > last_scan_ms && !scanPending_) {
+    if (active_scan_list_.front().scans_remaining > 0) {
+      startScan(active_scan_list_.front().address);
+      active_scan_list_.front().scans_remaining--;
+    } else {
+      active_scan_list_.erase(active_scan_list_.begin());
+    }
+  }
 }
 
 void ESP32BtClassic::startScan(esp_bd_addr_t addr) {
   ESP_LOGD(TAG, "Start scanning for %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr), addr[5]);
+  scanPending_ = true;
+  last_scan_ms = millis();
 
   for (auto *listener : this->scan_start_listners_) {
     listener->on_scan_start();
   }
 
   esp_bt_gap_read_remote_name(addr);
+}
+
+void ESP32BtClassic::addScan(const bt_scan_item &scan) { active_scan_list_.push_back(scan); }
+void ESP32BtClassic::addScan(const std::vector<bt_scan_item> &scan_list) {
+  active_scan_list_.insert(active_scan_list_.end(), scan_list.begin(), scan_list.end());
 }
 
 void ESP32BtClassic::gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
@@ -184,34 +194,66 @@ void ESP32BtClassic::gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_c
 
 void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
   ESP_LOGV(TAG, "(BT) gap_event_handler - %d", event);
-  for (auto *gap_handler : this->gap_event_handlers_) {
-    gap_handler->gap_event_handler(event, param);
-  }
-  for (auto *node : this->nodes_) {
-    node->gap_event_handler(event, param);
-  }
 
-  // Internal handling:
-  handle_gap_event_internal(event, param);
-}
-
-void ESP32BtClassic::handle_gap_event_internal(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
   switch (event) {
     case ESP_BT_GAP_READ_REMOTE_NAME_EVT: {
-      // SetReadRemoteNameResult(param->read_rmt_name);
       ESP_LOGI(TAG, "Read remote name result:\n  Stat: %s (%d)\n  Name: %s\n  Addr: %02X:%02X:%02X:%02X:%02X:%02X",
                esp_bt_status_to_str(param->read_rmt_name.stat), param->read_rmt_name.stat,
                param->read_rmt_name.rmt_name, EXPAND_MAC_F(param->read_rmt_name.bda));
 
+      handle_scan_result(param->read_rmt_name);
+
       for (auto *listener : this->scan_result_listners_) {
         listener->on_scan_result(param->read_rmt_name);
+      }
+
+      for (auto *node : this->nodes_) {
+        node->on_scan_result(param->read_rmt_name);
       }
       break;
     }
     default: {
-      ESP_LOGI(TAG, "event: %d", event);
+      ESP_LOGD(TAG, "event: %d", event);
       break;
     }
+  }
+}
+
+void ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
+  scanPending_ = false;
+
+  auto it = active_scan_list_.begin();
+  while (it != active_scan_list_.end()) {
+    if (0 == memcmp(it->address, result.bda, sizeof(esp_bd_addr_t))) {
+      // If device was found, remove it from the scan list
+      if (ESP_BT_STATUS_SUCCESS == result.stat) {
+        ESP_LOGI(TAG, "Found device '%02X:%02X:%02X:%02X:%02X:%02X' (%s) with %d scans remaining",
+                 EXPAND_MAC_F(it->address), result.rmt_name, it->scans_remaining);
+        active_scan_list_.erase(it);
+      } else {
+        it->next_scan_time = millis() + scan_delay_;
+        if (it->scans_remaining == 0) {
+          ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found on final scan. Removing from scan list.",
+                   EXPAND_MAC_F(it->address));
+          active_scan_list_.erase(it);
+        } else {
+          ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found. %d scans remaining",
+                   EXPAND_MAC_F(it->address), it->scans_remaining);
+          // Put device at end of the scan queue
+          if (active_scan_list_.size() > 1) {
+            moveItemToBack(active_scan_list_, it - active_scan_list_.begin());
+          }
+        }
+      }
+      ESP_LOGD(TAG, "Scanning... size: %d", active_scan_list_.size());
+      break;
+    }
+    it++;
+  }
+
+  if (active_scan_list_.empty()) {
+    ESP_LOGD(TAG, "Scanning... size: %d", active_scan_list_.size());
+    ESP_LOGD(TAG, "Scan complete. No more devices left to scan.");
   }
 }
 

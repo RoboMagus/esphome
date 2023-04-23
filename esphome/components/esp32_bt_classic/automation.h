@@ -11,18 +11,9 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
-template<typename T> void moveItemToBack(std::vector<T> &v, size_t itemIndex) {
-  T tmp(v[itemIndex]);
-  v.erase(v.begin() + itemIndex);
-  v.push_back(tmp);
-}
-
 class BtClassicScannerNode : public BtClassicNode {
  public:
-  BtClassicScannerNode(ESP32BtClassic *bt_client) {
-    bt_client->register_node(this);
-    bt_client_ = bt_client;
-  }
+  BtClassicScannerNode(ESP32BtClassic *bt_client) { bt_client->register_node(this); }
 
   void set_scan_delay(uint32_t delay) { this->scan_delay_ = delay; }
 
@@ -31,70 +22,17 @@ class BtClassicScannerNode : public BtClassicNode {
       if (v.isValid()) {
         ESP_LOGV(TAG, "Adding '%02X:%02X:%02X:%02X:%02X:%02X' to scan list with %d scans", EXPAND_MAC_F(v.addr),
                  num_scans);
-        currentScan.push_back(bt_scan_item(v.addr, num_scans));
+        parent()->addScan(bt_scan_item(v.addr, num_scans));
       } else {
         ESP_LOGE(TAG, "Invalid MAC address!! %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(v.addr));
       }
     }
   }
 
-  void loop() {
-    uint32_t now = millis();
-    if (!currentScan.empty() && (now + scan_delay_) > last_scan_ms && !scanPending_) {
-      if (currentScan.front().scans_remaining > 0) {
-        parent()->startScan(currentScan.front().address);
-        currentScan.front().scans_remaining--;
-        scanPending_ = true;
-      } else {
-        currentScan.erase(currentScan.begin());
-      }
-      last_scan_ms = now;
-    }
-  }
-
-  void gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
-    if (event == ESP_BT_GAP_READ_REMOTE_NAME_EVT) {
-      auto it = currentScan.begin();
-      while (it != currentScan.end()) {
-        if (0 == memcmp(it->address, param->read_rmt_name.bda, sizeof(esp_bd_addr_t))) {
-          // If device was found, remove it from the scan list
-          if (ESP_BT_STATUS_SUCCESS == param->read_rmt_name.stat) {
-            ESP_LOGI(TAG, "Found device '%02X:%02X:%02X:%02X:%02X:%02X' (%s) with %d scans remaining",
-                     EXPAND_MAC_F(it->address), param->read_rmt_name.rmt_name, it->scans_remaining);
-            currentScan.erase(it);
-          } else {
-            it->next_scan_time = millis() + scan_delay_;
-            if (it->scans_remaining == 0) {
-              ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found on final scan. Removing from scan list.",
-                       EXPAND_MAC_F(it->address));
-              currentScan.erase(it);
-            } else {
-              ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found. %d scans remaining",
-                       EXPAND_MAC_F(it->address), it->scans_remaining);
-              // Put device at end of the scan queue
-              if (currentScan.size() > 1) {
-                moveItemToBack(currentScan, it - currentScan.begin());
-              }
-            }
-          }
-          scanPending_ = false;
-          break;
-        }
-        it++;
-      }
-
-      if (currentScan.empty()) {
-        ESP_LOGD(TAG, "Scan complete. No more devices left to scan.");
-      }
-    }
-  }
+  void on_scan_result(const rmt_name_result &result) override {}
 
  private:
-  ESP32BtClassic *bt_client_;
-  bool scanPending_{false};
   uint32_t scan_delay_{};
-  uint32_t last_scan_ms{};
-  std::vector<bt_scan_item> currentScan{};
 };
 
 template<typename... Ts> class BtClassicScanAction : public Action<Ts...>, public BtClassicScannerNode {
@@ -144,7 +82,7 @@ class BtClassicScanResultTrigger : public Trigger<const rmt_name_result &>, publ
     parent->register_scan_result_listener(this);
   }
 
-  bool on_scan_result(const rmt_name_result &result) override {
+  void on_scan_result(const rmt_name_result &result) override {
     // struct read_rmt_name_param {
     //   esp_bt_status_t stat;                            /*!< read Remote Name status */
     //   uint8_t rmt_name[ESP_BT_GAP_MAX_BDNAME_LEN + 1]; /*!< Remote device name */
@@ -154,12 +92,11 @@ class BtClassicScanResultTrigger : public Trigger<const rmt_name_result &>, publ
     if (!addresses_.empty()) {
       uint64_t result_addr = ble_addr_to_uint64(result.bda);
       if (std::find(addresses_.begin(), addresses_.end(), result_addr) == addresses_.end()) {
-        return false;  // Result address not in list to watch. Skip!
+        return;  // Result address not in list to watch. Skip!
       }
     }
 
     this->trigger(result);
-    return true;
   }
 
  protected:
