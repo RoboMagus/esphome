@@ -64,7 +64,7 @@ CONFIG_SCHEMA = cv.All(
                     cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
                         BtClassicScanResultTrigger
                     ),
-                    cv.Optional(CONF_MAC_ADDRESS): cv.mac_address,
+                    cv.Optional(CONF_MAC_ADDRESS): cv.ensure_list(cv.mac_address),
                 }
             ),
         }
@@ -135,9 +135,11 @@ async def to_code(config):
         await automation.build_automation(trigger, [], conf)
 
     for conf in config.get(CONF_ON_SCAN_RESULT, []):
-        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
-        if CONF_MAC_ADDRESS in conf:
-            cg.add(trigger.set_address(conf[CONF_MAC_ADDRESS].as_hex))
+        mac_addr = []
+        for it in conf.get(CONF_MAC_ADDRESS, []):
+            mac_addr.append(it.as_hex)
+
+        trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var, mac_addr)
         await automation.build_automation(
             trigger, [(RMT_NAME_RESULTConstRef, "x")], conf
         )
