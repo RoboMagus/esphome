@@ -20,7 +20,7 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
-void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t bd_addr) {
+void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t &bd_addr) {
   bd_addr[0] = (address >> 40) & 0xff;
   bd_addr[1] = (address >> 32) & 0xff;
   bd_addr[2] = (address >> 24) & 0xff;
@@ -29,7 +29,7 @@ void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t bd_addr) {
   bd_addr[5] = (address >> 0) & 0xff;
 }
 
-uint64_t ble_addr_to_uint64(const esp_bd_addr_t address) {
+uint64_t bd_addr_to_uint64(const esp_bd_addr_t address) {
   uint64_t u = 0;
   u |= uint64_t(address[0] & 0xFF) << 40;
   u |= uint64_t(address[1] & 0xFF) << 32;
@@ -40,10 +40,29 @@ uint64_t ble_addr_to_uint64(const esp_bd_addr_t address) {
   return u;
 }
 
-std::string addr2str(const esp_bd_addr_t &addr) {
+std::string bd_addr_to_str(const esp_bd_addr_t &addr) {
   char mac[24];
   snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
   return mac;
+}
+
+bool str_to_bd_addr(const char *addr_str, esp_bd_addr_t &addr) {
+  if (strlen(addr_str) != 17) {
+    ESP_LOGE(TAG, "Invalid string length for MAC address. Got '%s'", addr_str);
+    return false;
+  }
+
+  uint8_t *p = addr;
+  // Scan for MAC with semicolon separators
+  int args_found = sscanf(addr_str, "%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8, &p[0], &p[1],
+                          &p[2], &p[3], &p[4], &p[5]);
+  if (args_found != 6) {
+    ESP_LOGE(TAG, "Invalid MAC address: '%s'", addr_str);
+    return false;
+  }
+
+  ESP_LOGVV(TAG, "Created mac_addr from string : %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
+  return true;
 }
 
 template<typename T> void moveItemToBack(std::vector<T> &v, size_t itemIndex) {
@@ -146,11 +165,6 @@ bool ESP32BtClassic::gap_startup() {
 }
 
 void ESP32BtClassic::loop() {
-  // Loop all registered child nodes
-  for (auto *node : this->nodes_) {
-    node->loop();
-  }
-
   // Handle GAP event queue
   BtGapEvent *bt_event = this->bt_events_.pop();
   while (bt_event != nullptr) {
@@ -170,8 +184,10 @@ void ESP32BtClassic::loop() {
   }
 }
 
-void ESP32BtClassic::startScan(esp_bd_addr_t addr) {
-  ESP_LOGD(TAG, "Start scanning for %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr), addr[5]);
+void ESP32BtClassic::startScan(const uint64_t u64_addr) {
+  esp_bd_addr_t bd_addr;
+  uint64_to_bd_addr(u64_addr, bd_addr);
+  ESP_LOGD(TAG, "Start scanning for %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(bd_addr));
   scanPending_ = true;
   last_scan_ms = millis();
 
@@ -179,7 +195,7 @@ void ESP32BtClassic::startScan(esp_bd_addr_t addr) {
     listener->on_scan_start();
   }
 
-  esp_bt_gap_read_remote_name(addr);
+  esp_bt_gap_read_remote_name(bd_addr);
 }
 
 void ESP32BtClassic::addScan(const bt_scan_item &scan) { active_scan_list_.push_back(scan); }
@@ -207,9 +223,6 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
         listener->on_scan_result(param->read_rmt_name);
       }
 
-      for (auto *node : this->nodes_) {
-        node->on_scan_result(param->read_rmt_name);
-      }
       break;
     }
     default: {
@@ -221,24 +234,25 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
 
 void ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
   scanPending_ = false;
+  const uint64_t u64_addr = bd_addr_to_uint64(result.bda);
 
   auto it = active_scan_list_.begin();
   while (it != active_scan_list_.end()) {
-    if (0 == memcmp(it->address, result.bda, sizeof(esp_bd_addr_t))) {
+    if (it->address == u64_addr) {
       // If device was found, remove it from the scan list
       if (ESP_BT_STATUS_SUCCESS == result.stat) {
         ESP_LOGI(TAG, "Found device '%02X:%02X:%02X:%02X:%02X:%02X' (%s) with %d scans remaining",
-                 EXPAND_MAC_F(it->address), result.rmt_name, it->scans_remaining);
+                 EXPAND_MAC_F(result.bda), result.rmt_name, it->scans_remaining);
         active_scan_list_.erase(it);
       } else {
         it->next_scan_time = millis() + scan_delay_;
         if (it->scans_remaining == 0) {
           ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found on final scan. Removing from scan list.",
-                   EXPAND_MAC_F(it->address));
+                   EXPAND_MAC_F(result.bda));
           active_scan_list_.erase(it);
         } else {
           ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found. %d scans remaining",
-                   EXPAND_MAC_F(it->address), it->scans_remaining);
+                   EXPAND_MAC_F(result.bda), it->scans_remaining);
           // Put device at end of the scan queue
           if (active_scan_list_.size() > 1) {
             moveItemToBack(active_scan_list_, it - active_scan_list_.begin());

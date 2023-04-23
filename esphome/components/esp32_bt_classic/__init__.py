@@ -10,7 +10,20 @@ from esphome.const import (
 )
 from esphome.core import CORE
 from esphome import automation
-from esphome.components.esp32 import add_idf_sdkconfig_option, get_esp32_variant, const
+from esphome.components.esp32 import (
+    add_idf_sdkconfig_option,
+    get_esp32_variant,
+    const as esp32_const,
+)
+
+from .const import (
+    CONF_NUM_SCANS,
+    CONF_ON_SCAN_START,
+    CONF_ON_SCAN_RESULT,
+    # cg:
+    esp32_bt_classic_ns,
+    ESP32BtClassic,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,17 +32,10 @@ DEPENDENCIES = ["esp32"]
 CODEOWNERS = ["@RoboMagus"]
 CONFLICTS_WITH = ["esp32_ble_beacon"]
 
-CONF_NUM_SCANS = "num_scans"
-CONF_ON_SCAN_START = "on_scan_start"
-CONF_ON_SCAN_RESULT = "on_scan_result"
-
-NO_BLUTOOTH_VARIANTS = [const.VARIANT_ESP32S2]
+NO_BLUETOOTH_VARIANTS = [esp32_const.VARIANT_ESP32S2]
 
 MIN_IDF_VERSION = cv.Version(4, 4, 4)
 MIN_ARDUINO_VERSION = cv.Version(2, 0, 6)
-
-esp32_bt_classic_ns = cg.esphome_ns.namespace("esp32_bt_classic")
-ESP32BtClassic = esp32_bt_classic_ns.class_("ESP32BtClassic", cg.Component)
 
 RMT_NAME_RESULT = esp32_bt_classic_ns.class_("rmt_name_result")
 RMT_NAME_RESULTConstRef = RMT_NAME_RESULT.operator("ref").operator("const")
@@ -79,7 +85,7 @@ CONFIG_SCHEMA = cv.All(
 
 def validate_variant(_):
     variant = get_esp32_variant()
-    if variant in NO_BLUTOOTH_VARIANTS:
+    if variant in NO_BLUETOOTH_VARIANTS:
         raise cv.Invalid(f"{variant} does not support Bluetooth")
 
 
@@ -90,7 +96,7 @@ BT_CLASSIC_SCAN_ACTION_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_ID): cv.use_id(ESP32BtClassic),
         cv.Required(CONF_MAC_ADDRESS): cv.templatable(cv.ensure_list(cv.mac_address)),
-        cv.Optional(CONF_NUM_SCANS, default=1): cv.templatable(cv.positive_int),
+        cv.Optional(CONF_NUM_SCANS, default=1): cv.templatable(cv.uint8_t),
         cv.Optional(CONF_DELAY, default="0s"): cv.positive_time_period_milliseconds,
     }
 )
@@ -115,7 +121,7 @@ async def bt_classic_scan_to_code(config, action_id, template_arg, args):
 
     if CONF_NUM_SCANS in config:
         if cg.is_template(config[CONF_NUM_SCANS]):
-            templ = await cg.templatable(config[CONF_NUM_SCANS], args, cg.uint16)
+            templ = await cg.templatable(config[CONF_NUM_SCANS], args, cg.uint8)
             cg.add(var.set_num_scans_template(templ))
         else:
             cg.add(var.set_num_scans_simple(config[CONF_NUM_SCANS]))
