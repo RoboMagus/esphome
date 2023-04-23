@@ -5,20 +5,15 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
-#include "esphome/components/esp32_ble/queue.h"
-
 #ifdef USE_ESP32
 
 // IDF headers
 #include <esp_bt_defs.h>
 #include <esp_gap_bt_api.h>
 
-#ifndef SCNx8
-#define SCNx8 "hhx"
-#endif
+#include "esphome/components/esp32_ble/queue.h"
 
-// Helper for printing Bt MAC addresses for format "%02X:%02X:%02X:%02X:%02X:%02X"
-#define EXPAND_MAC_F(addr) addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]
+#include "utils.h"
 
 namespace esphome {
 namespace esp32_bt_classic {
@@ -29,18 +24,9 @@ namespace esp32_bt_classic {
 //     - u64 internal and convert to esp_bd_addr_t at the HAL
 // [ ] Refactor Automation Trigger interface into string status, string mac, and string name
 
-static const char *const TAG = "esp32_bt_classic";
-
 class ESP32BtClassic;
 
 typedef esp_bt_gap_cb_param_t::read_rmt_name_param rmt_name_result;
-
-// bd_addr_t <--> uint64_t conversion functions:
-void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t &bd_addr);
-uint64_t bd_addr_to_uint64(const esp_bd_addr_t address);
-
-std::string bd_addr_to_str(const esp_bd_addr_t &addr);
-bool str_to_bd_addr(const char *addr_str, esp_bd_addr_t &addr);
 
 struct BtGapEvent {
   explicit BtGapEvent(esp_bt_gap_cb_event_t Event, esp_bt_gap_cb_param_t *Param) : event(Event), param(*Param) {}

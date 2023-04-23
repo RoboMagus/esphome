@@ -1,7 +1,6 @@
 #ifdef USE_ESP32
 
 #include "bt_classic.h"
-#include "bt_status.h"
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
 
@@ -19,57 +18,6 @@
 
 namespace esphome {
 namespace esp32_bt_classic {
-
-void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t &bd_addr) {
-  bd_addr[0] = (address >> 40) & 0xff;
-  bd_addr[1] = (address >> 32) & 0xff;
-  bd_addr[2] = (address >> 24) & 0xff;
-  bd_addr[3] = (address >> 16) & 0xff;
-  bd_addr[4] = (address >> 8) & 0xff;
-  bd_addr[5] = (address >> 0) & 0xff;
-}
-
-uint64_t bd_addr_to_uint64(const esp_bd_addr_t address) {
-  uint64_t u = 0;
-  u |= uint64_t(address[0] & 0xFF) << 40;
-  u |= uint64_t(address[1] & 0xFF) << 32;
-  u |= uint64_t(address[2] & 0xFF) << 24;
-  u |= uint64_t(address[3] & 0xFF) << 16;
-  u |= uint64_t(address[4] & 0xFF) << 8;
-  u |= uint64_t(address[5] & 0xFF) << 0;
-  return u;
-}
-
-std::string bd_addr_to_str(const esp_bd_addr_t &addr) {
-  char mac[24];
-  snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
-  return mac;
-}
-
-bool str_to_bd_addr(const char *addr_str, esp_bd_addr_t &addr) {
-  if (strlen(addr_str) != 17) {
-    ESP_LOGE(TAG, "Invalid string length for MAC address. Got '%s'", addr_str);
-    return false;
-  }
-
-  uint8_t *p = addr;
-  // Scan for MAC with semicolon separators
-  int args_found = sscanf(addr_str, "%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8 ":%" SCNx8, &p[0], &p[1],
-                          &p[2], &p[3], &p[4], &p[5]);
-  if (args_found != 6) {
-    ESP_LOGE(TAG, "Invalid MAC address: '%s'", addr_str);
-    return false;
-  }
-
-  ESP_LOGVV(TAG, "Created mac_addr from string : %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
-  return true;
-}
-
-template<typename T> void moveItemToBack(std::vector<T> &v, size_t itemIndex) {
-  T tmp(v[itemIndex]);
-  v.erase(v.begin() + itemIndex);
-  v.push_back(tmp);
-}
 
 float ESP32BtClassic::get_setup_priority() const {
   // Setup just after BLE, (but before AFTER_BLUETOOTH) to ensure both can co-exist!
@@ -166,11 +114,11 @@ bool ESP32BtClassic::gap_startup() {
 
 void ESP32BtClassic::loop() {
   // Handle GAP event queue
-  BtGapEvent *bt_event = this->bt_events_.pop();
+  BtGapEvent *bt_event = bt_events_.pop();
   while (bt_event != nullptr) {
-    this->real_gap_event_handler_(bt_event->event, &(bt_event->param));
+    real_gap_event_handler_(bt_event->event, &(bt_event->param));
     delete bt_event;  // NOLINT(cppcoreguidelines-owning-memory)
-    bt_event = this->bt_events_.pop();
+    bt_event = bt_events_.pop();
   }
 
   // Process scanning queue
@@ -191,7 +139,7 @@ void ESP32BtClassic::startScan(const uint64_t u64_addr) {
   scanPending_ = true;
   last_scan_ms = millis();
 
-  for (auto *listener : this->scan_start_listners_) {
+  for (auto *listener : scan_start_listners_) {
     listener->on_scan_start();
   }
 
@@ -219,7 +167,7 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
 
       handle_scan_result(param->read_rmt_name);
 
-      for (auto *listener : this->scan_result_listners_) {
+      for (auto *listener : scan_result_listners_) {
         listener->on_scan_result(param->read_rmt_name);
       }
 
