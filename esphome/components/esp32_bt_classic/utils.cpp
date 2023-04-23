@@ -71,6 +71,14 @@ uint64_t bd_addr_to_uint64(const esp_bd_addr_t address) {
   return u;
 }
 
+std::string u64_addr_to_str(uint64_t address) {
+  esp_bd_addr_t addr;
+  char mac[24];
+  uint64_to_bd_addr(address, addr);
+  snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
+  return mac;
+}
+
 std::string bd_addr_to_str(const esp_bd_addr_t &addr) {
   char mac[24];
   snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));

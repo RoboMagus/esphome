@@ -37,8 +37,11 @@ NO_BLUETOOTH_VARIANTS = [esp32_const.VARIANT_ESP32S2]
 MIN_IDF_VERSION = cv.Version(4, 4, 4)
 MIN_ARDUINO_VERSION = cv.Version(2, 0, 6)
 
-RMT_NAME_RESULT = esp32_bt_classic_ns.class_("rmt_name_result")
-RMT_NAME_RESULTConstRef = RMT_NAME_RESULT.operator("ref").operator("const")
+BtAddress = esp32_bt_classic_ns.class_("BtAddress")
+BtAddressConstRef = BtAddress.operator("ref").operator("const")
+
+BtStatus = esp32_bt_classic_ns.class_("BtStatus")
+BtStatusConstRef = BtStatus.operator("ref").operator("const")
 
 GAPEventHandler = esp32_bt_classic_ns.class_("GAPEventHandler")
 
@@ -48,7 +51,8 @@ BtClassicScanAction = esp32_bt_classic_ns.class_(
 )
 # Triggers
 BtClassicScanResultTrigger = esp32_bt_classic_ns.class_(
-    "BtClassicScanResultTrigger", automation.Trigger.template(RMT_NAME_RESULTConstRef)
+    "BtClassicScanResultTrigger",
+    automation.Trigger.template(BtAddress, BtStatusConstRef, cg.const_char_ptr),
 )
 BtClassicScanStartTrigger = esp32_bt_classic_ns.class_(
     "BtClassicScanStartTrigger", automation.Trigger.template()
@@ -147,7 +151,13 @@ async def to_code(config):
 
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var, mac_addr)
         await automation.build_automation(
-            trigger, [(RMT_NAME_RESULTConstRef, "x")], conf
+            trigger,
+            [
+                (BtAddressConstRef, "address"),
+                (BtStatusConstRef, "status"),
+                (cg.const_char_ptr, "name"),
+            ],
+            conf,
         )
 
     if CORE.using_esp_idf:

@@ -25,6 +25,8 @@ uint64_t bd_addr_to_uint64(const esp_bd_addr_t address);
 std::string bd_addr_to_str(const esp_bd_addr_t &addr);
 bool str_to_bd_addr(const char *addr_str, esp_bd_addr_t &addr);
 
+std::string u64_addr_to_str(uint64_t address);
+
 template<typename T> void moveItemToBack(std::vector<T> &v, size_t itemIndex) {
   T tmp(v[itemIndex]);
   v.erase(v.begin() + itemIndex);

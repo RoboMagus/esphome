@@ -41,6 +41,41 @@ struct bt_scan_item {
   uint32_t next_scan_time;
 };
 
+struct BtAddress {
+  BtAddress(uint64_t address) : address_(address) {}
+  BtAddress(const esp_bd_addr_t &address) : address_(bd_addr_to_uint64(address)) {}
+
+  // Implicit conversion operators
+  operator uint64_t() const { return address_; }
+  operator std::string() const { return str(); }
+  operator const char *() const { return c_str(); }
+
+  // Explicit type accessors
+  uint64_t u64() const { return address_; }
+  std::string str() const { return u64_addr_to_str(address_); }
+  const char *c_str() const { return str().c_str(); }
+
+ protected:
+  uint64_t address_;
+};
+
+struct BtStatus {
+  BtStatus(esp_bt_status_t status) : status_(status) {}
+
+  // Implicit conversion operators
+  operator esp_bt_status_t() const { return status_; }
+  operator const char *() const { return c_str(); }
+  operator std::string() const { return c_str(); }
+
+  // Explicit type accessors
+  esp_bt_status_t bt_status() const { return status_; }
+  const char *c_str() const { return esp_bt_status_to_str(status_); }
+  std::string str() const { return c_str(); }
+
+ protected:
+  esp_bt_status_t status_;
+};
+
 class BtClassicItf {
  public:
   virtual void addScan(const bt_scan_item &scan) = 0;

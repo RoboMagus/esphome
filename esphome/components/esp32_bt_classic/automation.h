@@ -77,7 +77,8 @@ class BtClassicScanStartTrigger : public Trigger<>, public BtClassicScanStartLis
   void on_scan_start() override { this->trigger(); }
 };
 
-class BtClassicScanResultTrigger : public Trigger<const rmt_name_result &>, public BtClassicScanResultListner {
+class BtClassicScanResultTrigger : public Trigger<const BtAddress &, const BtStatus &, const char *>,
+                                   public BtClassicScanResultListner {
  public:
   explicit BtClassicScanResultTrigger(ESP32BtClassic *parent, std::initializer_list<uint64_t> addresses = {})
       : addresses_(addresses) {
@@ -91,14 +92,14 @@ class BtClassicScanResultTrigger : public Trigger<const rmt_name_result &>, publ
     //   esp_bd_addr_t bda;                               /*!< remote bluetooth device address*/
     // } read_rmt_name;
 
+    uint64_t result_addr = bd_addr_to_uint64(result.bda);
     if (!addresses_.empty()) {
-      uint64_t result_addr = bd_addr_to_uint64(result.bda);
       if (std::find(addresses_.begin(), addresses_.end(), result_addr) == addresses_.end()) {
         return;  // Result address not in list to watch. Skip!
       }
     }
 
-    this->trigger(result);
+    this->trigger(result_addr, result.stat, (const char *) result.rmt_name);
   }
 
  protected:
