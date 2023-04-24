@@ -20,9 +20,6 @@ from .const import (
     CONF_NUM_SCANS,
     CONF_ON_SCAN_START,
     CONF_ON_SCAN_RESULT,
-    # cg:
-    esp32_bt_classic_ns,
-    ESP32BtClassic,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,12 +27,14 @@ _LOGGER = logging.getLogger(__name__)
 AUTO_LOAD = ["esp32_ble"]
 DEPENDENCIES = ["esp32"]
 CODEOWNERS = ["@RoboMagus"]
-CONFLICTS_WITH = ["esp32_ble_beacon"]
 
 NO_BLUETOOTH_VARIANTS = [esp32_const.VARIANT_ESP32S2]
 
 MIN_IDF_VERSION = cv.Version(4, 4, 4)
 MIN_ARDUINO_VERSION = cv.Version(2, 0, 6)
+
+esp32_bt_classic_ns = cg.esphome_ns.namespace("esp32_bt_classic")
+ESP32BtClassic = esp32_bt_classic_ns.class_("ESP32BtClassic", cg.Component)
 
 BtAddress = esp32_bt_classic_ns.class_("BtAddress")
 BtAddressConstRef = BtAddress.operator("ref").operator("const")
