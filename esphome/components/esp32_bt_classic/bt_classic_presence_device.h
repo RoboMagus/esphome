@@ -32,7 +32,9 @@ class BTClassicPresenceDevice : public PollingComponent,
       if (ESP_BT_STATUS_SUCCESS == result.stat) {
         this->publish_state(true);
       } else {
-        if ((--scans_remaining) == 0) {
+        if (scans_remaining > 0) {
+          scans_remaining--;
+        } else {
           this->publish_state(false);
         }
       }

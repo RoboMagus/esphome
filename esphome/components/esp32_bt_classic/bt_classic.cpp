@@ -146,9 +146,26 @@ void ESP32BtClassic::startScan(const uint64_t u64_addr) {
   esp_bt_gap_read_remote_name(bd_addr);
 }
 
-void ESP32BtClassic::addScan(const bt_scan_item &scan) { active_scan_list_.push_back(scan); }
+void ESP32BtClassic::addScan(const bt_scan_item &scan) {
+  // Ensure active scan list only contains unique MAC addresses
+  auto element = std::find_if(active_scan_list_.begin(), active_scan_list_.end(),
+                              [&scan](const bt_scan_item &i) { return i.address == scan.address; });
+  if (element != active_scan_list_.end()) {
+    // Device already in active scan list; increase scans_remaining
+    element->scans_remaining += scan.scans_remaining;
+    ESP_LOGV(TAG, "Found %s already in active scan list. Increased scans remaining to %d",
+             u64_addr_to_str(scan.address).c_str(), element->scans_remaining);
+  } else {
+    active_scan_list_.push_back(scan);
+    ESP_LOGV(TAG, "Added %s to active scan list with %d scans remaining", u64_addr_to_str(scan.address).c_str(),
+             scan.scans_remaining);
+  }
+}
+
 void ESP32BtClassic::addScan(const std::vector<bt_scan_item> &scan_list) {
-  active_scan_list_.insert(active_scan_list_.end(), scan_list.begin(), scan_list.end());
+  for (const auto &scan : scan_list) {
+    addScan(scan);
+  }
 }
 
 void ESP32BtClassic::gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
@@ -161,10 +178,6 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
 
   switch (event) {
     case ESP_BT_GAP_READ_REMOTE_NAME_EVT: {
-      ESP_LOGI(TAG, "Read remote name result:\n  Stat: %s (%d)\n  Name: %s\n  Addr: %02X:%02X:%02X:%02X:%02X:%02X",
-               esp_bt_status_to_str(param->read_rmt_name.stat), param->read_rmt_name.stat,
-               param->read_rmt_name.rmt_name, EXPAND_MAC_F(param->read_rmt_name.bda));
-
       handle_scan_result(param->read_rmt_name);
 
       for (auto *listener : scan_result_listners_) {
@@ -194,12 +207,16 @@ void ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
         active_scan_list_.erase(it);
       } else {
         it->next_scan_time = millis() + scan_delay_;
+
+        ESP_LOGD(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' scan result: %s (%d)", EXPAND_MAC_F(result.bda),
+                 esp_bt_status_to_str(result.stat), result.stat);
+
         if (it->scans_remaining == 0) {
           ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found on final scan. Removing from scan list.",
                    EXPAND_MAC_F(result.bda));
           active_scan_list_.erase(it);
         } else {
-          ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found. %d scans remaining",
+          ESP_LOGD(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found. %d scans remaining",
                    EXPAND_MAC_F(result.bda), it->scans_remaining);
           // Put device at end of the scan queue
           if (active_scan_list_.size() > 1) {
@@ -207,14 +224,12 @@ void ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
           }
         }
       }
-      ESP_LOGD(TAG, "Scanning... size: %d", active_scan_list_.size());
       break;
     }
     it++;
   }
 
   if (active_scan_list_.empty()) {
-    ESP_LOGD(TAG, "Scanning... size: %d", active_scan_list_.size());
     ESP_LOGD(TAG, "Scan complete. No more devices left to scan.");
   }
 }
@@ -224,6 +239,8 @@ void ESP32BtClassic::dump_config() {
   if (mac_address) {
     ESP_LOGCONFIG(TAG, "ESP32 BT Classic:");
     ESP_LOGCONFIG(TAG, "  MAC address: %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(mac_address));
+    ESP_LOGCONFIG(TAG, "  %d registered Scan Start Listners", scan_start_listners_.size());
+    ESP_LOGCONFIG(TAG, "  %d registered Scan Result Listners", scan_result_listners_.size());
   } else {
     ESP_LOGCONFIG(TAG, "ESP32 BT: bluetooth stack is not enabled");
   }

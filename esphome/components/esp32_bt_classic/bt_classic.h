@@ -22,7 +22,12 @@ namespace esp32_bt_classic {
 // [x] Hook up nodes callback functions.
 // [x] Refactor to use u64 based mac address (common among EspHome codebase)
 //     - u64 internal and convert to esp_bd_addr_t at the HAL
-// [ ] Refactor Automation Trigger interface into string status, string mac, and string name
+// [x] Refactor Automation Trigger interface into string status, string mac, and string name
+// [ ] Linked list active scan list
+// [ ] sort by next scan time
+// [ ] address based on scan start
+// [x] unique addresses in list. (add num scans on colision).
+// [ ] add scan parameters (num scans) to result
 
 class ESP32BtClassic;
 
