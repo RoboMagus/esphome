@@ -2,7 +2,7 @@
 #include "esphome/core/helpers.h"
 
 #ifdef USE_OTA
-#include "esphome/components/ota/ota_component.h"
+#include "esphome/components/ota/ota_backend.h"
 #endif
 
 #ifdef USE_ESP32
@@ -31,16 +31,17 @@ void Soehnle_AC500::setup() {
   }
 
 #ifdef USE_OTA
-  ota::global_ota_component->add_on_state_callback([this](ota::OTAState state, float progress, uint8_t error) {
-    if (state == ota::OTA_STARTED) {
-      ESP_LOGW(TAG, "Disable & Disconnect for OTA");
-      this->parent()->disconnect();
-      this->parent()->set_enabled(false);
-    } else if (state == ota::OTA_ERROR) {
-      this->parent()->set_enabled(true);
-      this->parent()->connect();
-    }
-  });
+  ota::get_global_ota_callback()->add_on_state_callback(
+    [this](ota::OTAState state, float progress, uint8_t error, ota::OTAComponent *comp) {
+      if (state == ota::OTA_STARTED) {
+        ESP_LOGW(TAG, "Disable & Disconnect for OTA");
+        this->parent()->disconnect();
+        this->parent()->set_enabled(false);
+      } else if (state == ota::OTA_ERROR) {
+        this->parent()->set_enabled(true);
+        this->parent()->connect();
+      }
+    });
 #endif
 
   // ToDo: Initial update for all sensors in case device won't connect...
