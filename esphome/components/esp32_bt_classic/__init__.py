@@ -8,9 +8,11 @@ from esphome.const import (
     CONF_MAC_ADDRESS,
     CONF_NUM_SCANS,
     CONF_TRIGGER_ID,
+    ENTITY_CATEGORY_DIAGNOSTIC,
 )
 from esphome.core import CORE
 from esphome import automation
+from esphome.components import text_sensor
 from esphome.components.esp32 import (
     add_idf_sdkconfig_option,
     get_esp32_variant,
@@ -20,18 +22,24 @@ from esphome.components.esp32 import (
 from .const import (
     CONF_ON_SCAN_START,
     CONF_ON_SCAN_RESULT,
+    CONF_LAST_ERROR,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-AUTO_LOAD = ["esp32_bt_common"]
+AUTO_LOAD = ["esp32_bt_common", "text_sensor"]
 DEPENDENCIES = ["esp32"]
 CODEOWNERS = ["@RoboMagus"]
 
 NO_BLUETOOTH_VARIANTS = [esp32_const.VARIANT_ESP32S2]
 
-MIN_IDF_VERSION = cv.Version(4, 4, 4)
+# Required for support where BT scans report MAC for scan-result
+#MIN_IDF_VERSION = cv.Version(4, 4, 4)
 MIN_ARDUINO_VERSION = cv.Version(2, 0, 5)
+
+# IDF V5+ seems to fix 'scans not working after a while...'
+MIN_IDF_VERSION = cv.Version(5, 1, 0)
+#MIN_ARDUINO_VERSION = cv.Version(3, 0, 0)
 
 esp32_bt_classic_ns = cg.esphome_ns.namespace("esp32_bt_classic")
 ESP32BtClassic = esp32_bt_classic_ns.class_("ESP32BtClassic", cg.Component)
@@ -42,6 +50,9 @@ BtAddressConstRef = BtAddress.operator("ref").operator("const")
 BtStatus = esp32_bt_classic_ns.class_("BtStatus")
 BtStatusConstRef = BtStatus.operator("ref").operator("const")
 
+ScanStatus = esp32_bt_classic_ns.class_("ScanStatus")
+ScanStatusConstRef = ScanStatus.operator("ref").operator("const")
+
 GAPEventHandler = esp32_bt_classic_ns.class_("GAPEventHandler")
 
 # Actions
@@ -51,7 +62,9 @@ BtClassicScanAction = esp32_bt_classic_ns.class_(
 # Triggers
 BtClassicScanResultTrigger = esp32_bt_classic_ns.class_(
     "BtClassicScanResultTrigger",
-    automation.Trigger.template(BtAddress, BtStatusConstRef, cg.const_char_ptr),
+    automation.Trigger.template(
+        BtAddress, BtStatusConstRef, cg.const_char_ptr, ScanStatusConstRef
+    ),
 )
 BtClassicScanStartTrigger = esp32_bt_classic_ns.class_(
     "BtClassicScanStartTrigger", automation.Trigger.template()
@@ -75,6 +88,9 @@ CONFIG_SCHEMA = cv.All(
                     ),
                     cv.Optional(CONF_MAC_ADDRESS): cv.ensure_list(cv.mac_address),
                 }
+            ),
+            cv.Optional(CONF_LAST_ERROR): text_sensor.text_sensor_schema(
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC
             ),
         }
     ).extend(cv.COMPONENT_SCHEMA),
@@ -153,13 +169,25 @@ async def to_code(config):
             trigger,
             [
                 (BtAddressConstRef, "address"),
-                (BtStatusConstRef, "status"),
+                (BtStatusConstRef, "scan_result"),
                 (cg.const_char_ptr, "name"),
+                (ScanStatusConstRef, "status"),
             ],
             conf,
         )
+
+    if CONF_LAST_ERROR in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_LAST_ERROR])
+        cg.add(var.set_last_error_sensor(sens))
 
     if CORE.using_esp_idf:
         add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
         add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BTDM", True)
         add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLED", True)
+        add_idf_sdkconfig_option("CONFIG_BTU_TASK_STACK_SIZE", 8192)
+
+        add_idf_sdkconfig_option("CONFIG_BT_LOG_GAP_TRACE_LEVEL_DEBUG", True)
+        add_idf_sdkconfig_option("CONFIG_BT_LOG_GAP_TRACE_LEVEL", 5)
+
+        add_idf_sdkconfig_option("CONFIG_BT_LOG_BTC_TRACE_LEVEL_DEBUG", True)
+        add_idf_sdkconfig_option("CONFIG_BT_LOG_BTC_TRACE_LEVEL", 5)

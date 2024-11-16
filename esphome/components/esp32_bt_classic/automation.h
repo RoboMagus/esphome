@@ -74,7 +74,7 @@ class BtClassicScanStartTrigger : public Trigger<>, public BtClassicScanStartLis
   void on_scan_start() override { this->trigger(); }
 };
 
-class BtClassicScanResultTrigger : public Trigger<const BtAddress &, const BtStatus &, const char *>,
+class BtClassicScanResultTrigger : public Trigger<const BtAddress &, const BtStatus &, const char *, const ScanStatus &>,
                                    public BtClassicScanResultListner {
  public:
   explicit BtClassicScanResultTrigger(ESP32BtClassic *parent, std::initializer_list<uint64_t> addresses = {})
@@ -82,7 +82,7 @@ class BtClassicScanResultTrigger : public Trigger<const BtAddress &, const BtSta
     parent->register_scan_result_listener(this);
   }
 
-  void on_scan_result(const rmt_name_result &result) override {
+  void on_scan_result(const rmt_name_result &result, const optional<bt_scan_item>& scan_item) override {
 
     uint64_t result_addr = bd_addr_to_uint64(result.bda);
     if (!addresses_.empty()) {
@@ -91,7 +91,14 @@ class BtClassicScanResultTrigger : public Trigger<const BtAddress &, const BtSta
       }
     }
 
-    this->trigger(result_addr, result.stat, (const char *) result.rmt_name);
+    ScanStatus scan_status = SCAN_STATUS_SCANNING;
+    if (result.stat == ESP_BT_STATUS_SUCCESS) {
+      scan_status = SCAN_STATUS_FOUND;
+    }
+    else if(scan_item.has_value() && result.stat == ESP_BT_STATUS_FAIL && scan_item.value().scans_remaining == 0) {
+      scan_status = SCAN_STATUS_NOT_FOUND;
+    }
+    this->trigger(result_addr, result.stat, (const char *) result.rmt_name, scan_status);
   }
 
  protected:

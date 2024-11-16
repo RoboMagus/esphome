@@ -13,13 +13,16 @@
 #include <nvs_flash.h>
 
 #include "esphome/components/esp32_bt_common/bt_defs.h"
+// For time getting:
+#include "esphome/components/homeassistant/time/homeassistant_time.h"
 
 namespace esphome {
 namespace esp32_bt_classic {
 
 float ESP32BtClassic::get_setup_priority() const {
   // Setup just after BLE, (but before AFTER_BLUETOOTH) to ensure both can co-exist!
-  return setup_priority::BLUETOOTH - 5.0f;
+  // return setup_priority::BLUETOOTH - 5.0f;
+  return setup_priority::AFTER_BLUETOOTH + 5.0f;
 }
 
 void ESP32BtClassic::setup() {
@@ -29,6 +32,11 @@ void ESP32BtClassic::setup() {
   if (!bt_setup_()) {
     ESP_LOGE(TAG, "BT Classic could not be set up");
     this->mark_failed();
+#ifdef USE_TEXT_SENSOR
+  if (last_error_sensor_) {
+    last_error_sensor_->publish_state("boot");
+  }
+#endif
     return;
   }
 
@@ -74,6 +82,7 @@ bool ESP32BtClassic::bt_setup_() {
   }
 #endif
 
+  ESP_LOGD(TAG, "Initializing BlueDroid");
   if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_UNINITIALIZED) {
     if ((err = esp_bluedroid_init()) != ESP_OK) {
       ESP_LOGE(TAG, "%s initialize bluedroid failed: %s\n", __func__, esp_err_to_name(err));
@@ -81,6 +90,7 @@ bool ESP32BtClassic::bt_setup_() {
     }
   }
 
+  ESP_LOGD(TAG, "Enabling BlueDroid");
   if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
     if ((err = esp_bluedroid_enable()) != ESP_OK) {
       ESP_LOGE(TAG, "%s enable bluedroid failed: %s\n", __func__, esp_err_to_name(err));
@@ -91,12 +101,16 @@ bool ESP32BtClassic::bt_setup_() {
   bool success = gap_startup();
 
   // BT takes some time to be fully set up, 200ms should be more than enough
-  delay(200);  // NOLINT
+  for (int i = 10; i < 20; i++) {
+    App.feed_wdt();
+    delay(10);  // NOLINT
+  }
 
   return success;
 }
 
 bool ESP32BtClassic::gap_startup() {
+  ESP_LOGD(TAG, "Startup GAP");
   // set discoverable and connectable mode, wait to be connected
   esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
 
@@ -134,14 +148,19 @@ void ESP32BtClassic::startScan(const uint64_t u64_addr) {
   esp_bd_addr_t bd_addr;
   uint64_to_bd_addr(u64_addr, bd_addr);
   ESP_LOGD(TAG, "Start scanning for %02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(bd_addr));
-  scanPending_ = true;
-  last_scan_ms = millis();
+  esp_err_t result = esp_bt_gap_read_remote_name(bd_addr);
 
-  for (auto *listener : scan_start_listners_) {
-    listener->on_scan_start();
+  if (result == ESP_OK) {
+    scanPending_ = true;
+    last_scan_ms = millis();
+    for (auto *listener : scan_start_listners_) {
+      listener->on_scan_start();
+    }
+  }
+  else {
+    ESP_LOGE(TAG, "Could not start scan! Error: %s\n  BlueDroid status: %d\n  Controller status: %d", esp_err_to_name(result), esp_bluedroid_get_status(), esp_bt_controller_get_status());
   }
 
-  esp_bt_gap_read_remote_name(bd_addr);
 }
 
 void ESP32BtClassic::addScan(const bt_scan_item &scan) {
@@ -176,10 +195,10 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
 
   switch (event) {
     case ESP_BT_GAP_READ_REMOTE_NAME_EVT: {
-      handle_scan_result(param->read_rmt_name);
+      const auto& scan_item = handle_scan_result(param->read_rmt_name);
 
       for (auto *listener : scan_result_listners_) {
-        listener->on_scan_result(param->read_rmt_name);
+        listener->on_scan_result(param->read_rmt_name, scan_item);
       }
 
       break;
@@ -191,23 +210,30 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
   }
 }
 
-void ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
+optional<bt_scan_item> ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
   scanPending_ = false;
+  uint32_t scanDuration = millis() - last_scan_ms;
   const uint64_t u64_addr = bd_addr_to_uint64(result.bda);
 
+  optional<bt_scan_item> active_scan_item{};
   auto it = active_scan_list_.begin();
   while (it != active_scan_list_.end()) {
     if (it->address == u64_addr) {
+      // copy scan_item to return value before modifications!
+      active_scan_item = *it;
+      active_scan_item->scan_duration = scanDuration;
+
       // If device was found, remove it from the scan list
       if (ESP_BT_STATUS_SUCCESS == result.stat) {
-        ESP_LOGI(TAG, "Found device '%02X:%02X:%02X:%02X:%02X:%02X' (%s) with %d scans remaining",
-                 EXPAND_MAC_F(result.bda), result.rmt_name, it->scans_remaining);
+        ESP_LOGI(TAG, "Found device '%02X:%02X:%02X:%02X:%02X:%02X' (%s) in %lu ms with %d scans remaining",
+                 EXPAND_MAC_F(result.bda), result.rmt_name, scanDuration, it->scans_remaining);
         active_scan_list_.erase(it);
       } else {
         it->next_scan_time = millis() + scan_delay_;
 
-        ESP_LOGD(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' scan result: %s (%d)", EXPAND_MAC_F(result.bda),
-                 esp_bt_status_to_str(result.stat), result.stat);
+        ESP_LOGD(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' scan result: %s (%d) in %lu ms", EXPAND_MAC_F(result.bda),
+                 esp_bt_status_to_str(result.stat), result.stat, scanDuration);
+        ESP_LOGD(TAG, "BlueDroid status: %d\n  Controller status: %d", esp_bluedroid_get_status(), esp_bt_controller_get_status());
 
         if (it->scans_remaining == 0) {
           ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found on final scan. Removing from scan list.",
@@ -227,9 +253,17 @@ void ESP32BtClassic::handle_scan_result(const rmt_name_result &result) {
     it++;
   }
 
+#ifdef USE_TEXT_SENSOR
+  if (last_error_sensor_ && result.stat == ESP_BT_STATUS_FAIL && scanDuration < 100) {
+    auto current_time = esphome::homeassistant::global_homeassistant_time->now();
+    last_error_sensor_->publish_state(current_time.strftime("%Y-%m-%d %H:%M:%S"));
+  }
+#endif
+
   if (active_scan_list_.empty()) {
     ESP_LOGD(TAG, "Scan complete. No more devices left to scan.");
   }
+  return active_scan_item;
 }
 
 void ESP32BtClassic::dump_config() {

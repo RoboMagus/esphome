@@ -13,6 +13,17 @@ namespace esphome {
 namespace esp32_bt_classic {
 
 typedef struct {
+  scan_status_t code;
+  const char *msg;
+} scan_status_msg_t;
+
+static const scan_status_msg_t scan_status_msg_table[] = {
+  {SCAN_STATUS_SCANNING, "Scanning"},
+  {SCAN_STATUS_FOUND, "Found"},
+  {SCAN_STATUS_NOT_FOUND, "Not Found"},
+};
+
+typedef struct {
   esp_bt_status_t code;
   const char *msg;
 } esp_bt_status_msg_t;
@@ -51,6 +62,16 @@ const char *esp_bt_status_to_str(esp_bt_status_t code) {
   return "Unknown Status";
 }
 
+const char *scan_status_to_str(scan_status_t status) {
+  for (int i = 0; i < sizeof(scan_status_msg_table) / sizeof(scan_status_msg_table[0]); ++i) {
+    if (scan_status_msg_table[i].code == status) {
+      return scan_status_msg_table[i].msg;
+    }
+  }
+
+  return "Unknown";
+}
+
 void uint64_to_bd_addr(uint64_t address, esp_bd_addr_t &bd_addr) {
   bd_addr[0] = (address >> 40) & 0xff;
   bd_addr[1] = (address >> 32) & 0xff;
@@ -77,6 +98,14 @@ std::string u64_addr_to_str(uint64_t address) {
   uint64_to_bd_addr(address, addr);
   snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", EXPAND_MAC_F(addr));
   return mac;
+}
+
+uint64_t str_to_u64_addr(const char* addr_str) {
+  esp_bd_addr_t addr;
+  if(str_to_bd_addr(addr_str, addr)) {
+    return bd_addr_to_uint64(addr);
+  }
+  return 0;
 }
 
 std::string bd_addr_to_str(const esp_bd_addr_t &addr) {

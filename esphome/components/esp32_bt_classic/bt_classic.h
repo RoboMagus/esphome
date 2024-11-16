@@ -9,6 +9,10 @@
 
 #include "esphome/components/esp32_bt_common/queue.h"
 
+#ifdef USE_TEXT_SENSOR
+#include "esphome/components/text_sensor/text_sensor.h"
+#endif
+
 // IDF headers
 #include <esp_bt_defs.h>
 #include <esp_gap_bt_api.h>
@@ -29,10 +33,12 @@ struct BtGapEvent {
 };
 
 struct bt_scan_item {
-  bt_scan_item(uint64_t u64_addr, uint8_t num_scans) : address(u64_addr), scans_remaining(num_scans) {}
+  bt_scan_item() : address{}, scans_remaining{}, next_scan_time{}, scan_duration{} {}
+  bt_scan_item(uint64_t u64_addr, uint8_t num_scans) : address(u64_addr), scans_remaining(num_scans), next_scan_time{}, scan_duration{} {}
   uint64_t address;
   uint8_t scans_remaining;
   uint32_t next_scan_time;
+  uint32_t scan_duration;
 };
 
 struct BtAddress {
@@ -70,6 +76,24 @@ struct BtStatus {
   esp_bt_status_t status_;
 };
 
+
+struct ScanStatus {
+  ScanStatus(scan_status_t status) : status_(status) {}
+
+  // Implicit conversion operators
+  operator scan_status_t() const { return status_; }
+  operator const char *() const { return c_str(); }
+  operator std::string() const { return c_str(); }
+
+  // Explicit type accessors
+  scan_status_t scan_status() const { return status_; }
+  const char *c_str() const { return scan_status_to_str(status_); }
+  std::string str() const { return c_str(); }
+
+protected:
+  scan_status_t status_;
+};
+
 class BtClassicItf {
  public:
   virtual void addScan(const bt_scan_item &scan) = 0;
@@ -92,7 +116,7 @@ class BtClassicScanStartListner : public BtClassicChildBase {
 
 class BtClassicScanResultListner : public BtClassicChildBase {
  public:
-  virtual void on_scan_result(const rmt_name_result &result) = 0;
+  virtual void on_scan_result(const rmt_name_result &result, const optional<bt_scan_item> &scan_item) = 0;
 };
 
 // -----------------------------------------------
@@ -105,6 +129,10 @@ class ESP32BtClassic : public Component, public BtClassicItf {
   void loop() override;
   void dump_config() override;
   float get_setup_priority() const override;
+
+#ifdef USE_TEXT_SENSOR
+  void set_last_error_sensor(text_sensor::TextSensor *last_error) { last_error_sensor_ = last_error; }
+#endif
 
   void register_scan_start_listener(BtClassicScanStartListner *listner) {
     listner->set_parent(this);
@@ -125,7 +153,7 @@ class ESP32BtClassic : public Component, public BtClassicItf {
 
   void startScan(const uint64_t u64_addr);
 
-  void handle_scan_result(const rmt_name_result &result);
+  optional<bt_scan_item> handle_scan_result(const rmt_name_result &result);
 
   bool bt_setup_();
   bool gap_startup();
@@ -141,6 +169,9 @@ class ESP32BtClassic : public Component, public BtClassicItf {
   // Ble-Queue which thread safety precautions:
   esp32_bt_common::Queue<BtGapEvent> bt_events_;
 
+#ifdef USE_TEXT_SENSOR
+  text_sensor::TextSensor *last_error_sensor_{nullptr};
+#endif
   const uint32_t scan_delay_{100};  // (ms) minimal time between consecutive scans
 };
 

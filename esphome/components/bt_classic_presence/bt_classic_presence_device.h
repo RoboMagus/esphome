@@ -24,7 +24,7 @@ class BTClassicPresenceDevice : public PollingComponent,
 
   void dump_config() override;
   void update() override;
-  void on_scan_result(const esp32_bt_classic::rmt_name_result &result) override;
+  void on_scan_result(const esp32_bt_classic::rmt_name_result &result, const optional<esp32_bt_classic::bt_scan_item>& scan_item) override;
 
  protected:
   uint8_t scans_remaining{0};
