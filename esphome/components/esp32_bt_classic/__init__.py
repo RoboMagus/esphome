@@ -191,3 +191,5 @@ async def to_code(config):
 
         add_idf_sdkconfig_option("CONFIG_BT_LOG_BTC_TRACE_LEVEL_DEBUG", True)
         add_idf_sdkconfig_option("CONFIG_BT_LOG_BTC_TRACE_LEVEL", 5)
+
+    cg.add_define("BT_CLASSIC_INCLUDED_PLEASE_DONT_MEM_RELEASE")

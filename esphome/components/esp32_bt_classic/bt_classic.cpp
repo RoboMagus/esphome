@@ -33,9 +33,9 @@ void ESP32BtClassic::setup() {
     ESP_LOGE(TAG, "BT Classic could not be set up");
     this->mark_failed();
 #ifdef USE_TEXT_SENSOR
-  if (last_error_sensor_) {
-    last_error_sensor_->publish_state("boot");
-  }
+    if (last_error_sensor_) {
+      last_error_sensor_->publish_state("boot");
+    }
 #endif
     return;
   }
@@ -56,6 +56,12 @@ bool ESP32BtClassic::bt_setup_() {
     return false;
   }
 #else
+  ESP_LOGI(TAG, "BT_MODE: %d", BT_MODE);
+  // ESP_BT_MODE_IDLE = 0x00
+  // ESP_BT_MODE_BLE = 0x01
+  // ESP_BT_MODE_CLASSIC_BT = 0x02
+  // ESP_BT_MODE_BTDM = 0x03
+
   if (esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_ENABLED) {
     // start bt controller
     if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
@@ -82,20 +88,24 @@ bool ESP32BtClassic::bt_setup_() {
   }
 #endif
 
-  ESP_LOGD(TAG, "Initializing BlueDroid");
   if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_UNINITIALIZED) {
+    ESP_LOGD(TAG, "Initializing BlueDroid");
     if ((err = esp_bluedroid_init()) != ESP_OK) {
       ESP_LOGE(TAG, "%s initialize bluedroid failed: %s\n", __func__, esp_err_to_name(err));
       return false;
     }
+  } else {
+    ESP_LOGD(TAG, "BlueDroid Already Initialized!");
   }
 
-  ESP_LOGD(TAG, "Enabling BlueDroid");
   if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
+    ESP_LOGD(TAG, "Enabling BlueDroid");
     if ((err = esp_bluedroid_enable()) != ESP_OK) {
       ESP_LOGE(TAG, "%s enable bluedroid failed: %s\n", __func__, esp_err_to_name(err));
       return false;
     }
+  } else {
+    ESP_LOGD(TAG, "BlueDroid Already Enabled!");
   }
 
   bool success = gap_startup();
@@ -156,11 +166,10 @@ void ESP32BtClassic::startScan(const uint64_t u64_addr) {
     for (auto *listener : scan_start_listners_) {
       listener->on_scan_start();
     }
+  } else {
+    ESP_LOGE(TAG, "Could not start scan! Error: %s\n  BlueDroid status: %d\n  Controller status: %d",
+             esp_err_to_name(result), esp_bluedroid_get_status(), esp_bt_controller_get_status());
   }
-  else {
-    ESP_LOGE(TAG, "Could not start scan! Error: %s\n  BlueDroid status: %d\n  Controller status: %d", esp_err_to_name(result), esp_bluedroid_get_status(), esp_bt_controller_get_status());
-  }
-
 }
 
 void ESP32BtClassic::addScan(const bt_scan_item &scan) {
@@ -195,7 +204,7 @@ void ESP32BtClassic::real_gap_event_handler_(esp_bt_gap_cb_event_t event, esp_bt
 
   switch (event) {
     case ESP_BT_GAP_READ_REMOTE_NAME_EVT: {
-      const auto& scan_item = handle_scan_result(param->read_rmt_name);
+      const auto &scan_item = handle_scan_result(param->read_rmt_name);
 
       for (auto *listener : scan_result_listners_) {
         listener->on_scan_result(param->read_rmt_name, scan_item);
@@ -233,7 +242,8 @@ optional<bt_scan_item> ESP32BtClassic::handle_scan_result(const rmt_name_result 
 
         ESP_LOGD(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' scan result: %s (%d) in %lu ms", EXPAND_MAC_F(result.bda),
                  esp_bt_status_to_str(result.stat), result.stat, scanDuration);
-        ESP_LOGD(TAG, "BlueDroid status: %d\n  Controller status: %d", esp_bluedroid_get_status(), esp_bt_controller_get_status());
+        ESP_LOGD(TAG, "BlueDroid status: %d\n  Controller status: %d", esp_bluedroid_get_status(),
+                 esp_bt_controller_get_status());
 
         if (it->scans_remaining == 0) {
           ESP_LOGW(TAG, "Device '%02X:%02X:%02X:%02X:%02X:%02X' not found on final scan. Removing from scan list.",
