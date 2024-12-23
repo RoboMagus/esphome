@@ -8,11 +8,13 @@ from esphome.const import (
     CONF_MAC_ADDRESS,
     CONF_NUM_SCANS,
     CONF_TRIGGER_ID,
+    ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
+    ICON_RESTART,
 )
 from esphome.core import CORE
 from esphome import automation
-from esphome.components import text_sensor
+from esphome.components import button, text_sensor
 from esphome.components.esp32 import (
     add_idf_sdkconfig_option,
     get_esp32_variant,
@@ -23,6 +25,7 @@ from .const import (
     CONF_ON_SCAN_START,
     CONF_ON_SCAN_RESULT,
     CONF_LAST_ERROR,
+    CONF_RESET_BT_STACK,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,6 +73,8 @@ BtClassicScanStartTrigger = esp32_bt_classic_ns.class_(
     "BtClassicScanStartTrigger", automation.Trigger.template()
 )
 
+ResetBtStackButton = esp32_bt_classic_ns.class_("ResetBtStackButton", button.Button)
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -91,6 +96,11 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(CONF_LAST_ERROR): text_sensor.text_sensor_schema(
                 entity_category=ENTITY_CATEGORY_DIAGNOSTIC
+            ),
+            cv.Optional(CONF_RESET_BT_STACK): button.button_schema(
+                ResetBtStackButton,
+                entity_category=ENTITY_CATEGORY_CONFIG,
+                icon=ICON_RESTART,
             ),
         }
     ).extend(cv.COMPONENT_SCHEMA),
@@ -179,6 +189,12 @@ async def to_code(config):
     if CONF_LAST_ERROR in config:
         sens = await text_sensor.new_text_sensor(config[CONF_LAST_ERROR])
         cg.add(var.set_last_error_sensor(sens))
+
+
+    if revert_config := config.get(CONF_RESET_BT_STACK):
+        b = await button.new_button(revert_config)
+        await cg.register_parented(b, var)
+        cg.add(var.set_reset_bt_stack_button(b))
 
     if CORE.using_esp_idf:
         add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)

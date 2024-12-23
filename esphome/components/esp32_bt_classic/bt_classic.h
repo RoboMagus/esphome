@@ -9,6 +9,10 @@
 
 #include "esphome/components/esp32_bt_common/queue.h"
 
+#ifdef USE_BUTTON
+#include "esphome/components/button/button.h"
+#endif
+
 #ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
 #endif
@@ -119,6 +123,16 @@ class BtClassicScanResultListner : public BtClassicChildBase {
   virtual void on_scan_result(const rmt_name_result &result, const optional<bt_scan_item> &scan_item) = 0;
 };
 
+#ifdef USE_BUTTON
+class ResetBtStackButton : public button::Button, public Parented<ESP32BtClassic> {
+ public:
+  ResetBtStackButton() = default;
+
+ protected:
+  void press_action() override;
+};
+#endif
+
 // -----------------------------------------------
 // Main BT Classic class:
 //
@@ -126,9 +140,14 @@ class ESP32BtClassic : public Component, public BtClassicItf {
  public:
   virtual ~ESP32BtClassic() {};
   void setup() override;
+  void reset_bt_stack();
   void loop() override;
   void dump_config() override;
   float get_setup_priority() const override;
+
+#ifdef USE_BUTTON
+  void set_reset_bt_stack_button(button::Button *button) {reset_bt_stack_button_ = button; }
+#endif
 
 #ifdef USE_TEXT_SENSOR
   void set_last_error_sensor(text_sensor::TextSensor *last_error) { last_error_sensor_ = last_error; }
@@ -169,6 +188,9 @@ class ESP32BtClassic : public Component, public BtClassicItf {
   // Ble-Queue which thread safety precautions:
   esp32_bt_common::Queue<BtGapEvent> bt_events_;
 
+#ifdef USE_BUTTON
+  button::Button *reset_bt_stack_button_{nullptr};
+#endif
 #ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *last_error_sensor_{nullptr};
 #endif

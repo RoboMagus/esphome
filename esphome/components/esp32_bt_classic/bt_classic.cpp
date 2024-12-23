@@ -19,6 +19,10 @@
 namespace esphome {
 namespace esp32_bt_classic {
 
+#ifdef USE_BUTTON
+void ResetBtStackButton::press_action() { this->parent_->reset_bt_stack(); }
+#endif
+
 float ESP32BtClassic::get_setup_priority() const {
   // Setup just after BLE, (but before AFTER_BLUETOOTH) to ensure both can co-exist!
   // return setup_priority::BLUETOOTH - 5.0f;
@@ -132,6 +136,38 @@ bool ESP32BtClassic::gap_startup() {
   }
 
   return true;
+}
+
+void ESP32BtClassic::reset_bt_stack() {
+  ESP_LOGW(TAG, "Resetting BT stack!");
+
+#if 1
+  ESP_LOGD(TAG, "BlueDroid status: %d", esp_bluedroid_get_status());
+  if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
+    ESP_LOGD(TAG, "Disable BlueDroid");
+    auto resp = esp_bluedroid_disable();
+    ESP_LOGI(TAG, "BlueDroid Disable: %s", esp_err_to_name(resp));
+  }
+  if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
+    ESP_LOGD(TAG, "De-init BlueDroid");
+    auto resp = esp_bluedroid_deinit();
+    ESP_LOGI(TAG, "BlueDroid De-init: %s", esp_err_to_name(resp));
+  }
+  delay(250);
+#endif
+
+  ESP_LOGD(TAG, "BT Controller status: %d", esp_bt_controller_get_status());
+  esp_bt_controller_disable();
+  ESP_LOGD(TAG, "De-init BT Controller");
+  esp_bt_controller_deinit();
+
+  scanPending_ = false;
+  active_scan_list_.clear();
+
+  delay(500);
+  ESP_LOGW(TAG, "Re-Setup BT stack;");
+
+  bt_setup_();
 }
 
 void ESP32BtClassic::loop() {
