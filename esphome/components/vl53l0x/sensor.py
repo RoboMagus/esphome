@@ -21,6 +21,7 @@ VL53L0XSensor = vl53l0x_ns.class_(
 CONF_SIGNAL_RATE_LIMIT = "signal_rate_limit"
 CONF_LONG_RANGE = "long_range"
 CONF_TIMING_BUDGET = "timing_budget"
+CONF_RESET_ON_SETUP = "reset_on_setup"
 
 
 def check_keys(obj):
@@ -52,6 +53,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_SIGNAL_RATE_LIMIT, default=0.25): cv.float_range(
                 min=0.0, max=512.0, min_included=False, max_included=False
             ),
+            cv.Optional(CONF_RESET_ON_SETUP, default=False): cv.boolean,
             cv.Optional(CONF_LONG_RANGE, default=False): cv.boolean,
             cv.Optional(CONF_TIMEOUT, default="10ms"): check_timeout,
             cv.Optional(CONF_ENABLE_PIN): pins.gpio_output_pin_schema,
@@ -73,6 +75,7 @@ CONFIG_SCHEMA = cv.All(
 async def to_code(config):
     var = await sensor.new_sensor(config)
     await cg.register_component(var, config)
+    cg.add(var.set_reset_on_setup(config[CONF_RESET_ON_SETUP]))
     cg.add(var.set_signal_rate_limit(config[CONF_SIGNAL_RATE_LIMIT]))
     cg.add(var.set_long_range(config[CONF_LONG_RANGE]))
     cg.add(var.set_timeout_us(config[CONF_TIMEOUT]))

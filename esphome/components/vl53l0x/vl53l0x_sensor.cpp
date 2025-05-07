@@ -53,6 +53,11 @@ void VL53L0XSensor::setup() {
     delayMicroseconds(100);
   }
 
+  // Optional soft reset in case e.g. EspHome has restarted, but the sensor has not.
+  if (this->reset_on_startup_ && this->enable_pin_ == nullptr) {
+    soft_reset();
+  }
+
   // Save the i2c address we want and force it to use the default 0x29
   // until we finish setup, then re-address to final desired address.
   uint8_t final_address = address_;
@@ -316,6 +321,45 @@ void VL53L0XSensor::loop() {
       this->publish_state(range_m);
     }
   }
+}
+
+void VL53L0XSensor::reset() {
+  if (this->enable_pin_ != nullptr) {
+    ESP_LOGD(TAG, "VL53L0X Hardware Reset: '%s'", this->name_.c_str());
+    this->enable_pin_->digital_write(false);
+    delayMicroseconds(1000);
+    this->enable_pin_->digital_write(true);
+    delayMicroseconds(100);
+  }
+  else {
+    soft_reset();
+  }
+}
+
+void VL53L0XSensor::soft_reset() {
+  if (0x00 == reg(0xC0).get()) {
+    ESP_LOGW(TAG, "'%s' - VL53L0X Soft Reset skipped: Could not read sensor ID!", this->name_.c_str());
+    this->status_momentary_warning("soft_reset", 5000);
+    return;
+  }
+  ESP_LOGD(TAG, "'%s' - VL53L0X Soft Resetting", this->name_.c_str());
+
+  // Write reset bit
+  reg(0xBF) = 0x00;
+  delayMicroseconds(250);
+  reg(0xBF) = 0x01;
+  delayMicroseconds(50);
+  
+  uint32_t reset_start = micros();
+  while (0x00 == reg(0xC0).get()) {
+    if ((micros() - reset_start) > 50000) {
+      ESP_LOGE(TAG, "'%s' - Soft Reset timeout", this->name_.c_str());
+      this->mark_failed();
+      return;
+    }
+    yield();
+  }
+  ESP_LOGD(TAG, "'%s' - VL53L0X Soft Reset Success", this->name_.c_str());
 }
 
 uint32_t VL53L0XSensor::get_measurement_timing_budget_() {

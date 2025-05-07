@@ -33,7 +33,10 @@ class VL53L0XSensor : public sensor::Sensor, public PollingComponent, public i2c
   void update() override;
 
   void loop() override;
+  void reset();
+  void soft_reset();
 
+  void set_reset_on_setup(bool reset_on_startup) { reset_on_startup_ = reset_on_startup; }
   void set_signal_rate_limit(float signal_rate_limit) { signal_rate_limit_ = signal_rate_limit; }
   void set_long_range(bool long_range) { long_range_ = long_range; }
   void set_timeout_us(uint32_t timeout_us) { this->timeout_us_ = timeout_us; }
@@ -57,6 +60,7 @@ class VL53L0XSensor : public sensor::Sensor, public PollingComponent, public i2c
   bool perform_single_ref_calibration_(uint8_t vhv_init_byte);
 
   float signal_rate_limit_;
+  bool reset_on_startup_{false};
   bool long_range_;
   GPIOPin *enable_pin_{nullptr};
   uint32_t measurement_timing_budget_us_{0};
