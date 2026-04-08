@@ -180,7 +180,11 @@ bool ESP32BLE::ble_setup_() {
         ;
     }
     if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_INITED) {
+#ifdef USE_ESP32_BT_CLASSIC_COMPATIBILITY
+      err = esp_bt_controller_enable(ESP_BT_MODE_BTDM);
+#else
       err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+#endif
       if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_bt_controller_enable failed: %s", esp_err_to_name(err));
         return false;
@@ -192,7 +196,9 @@ bool ESP32BLE::ble_setup_() {
     }
   }
 
+#ifndef USE_ESP32_BT_CLASSIC_COMPATIBILITY
   esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+#endif
 #else
   esp_hosted_connect_to_slave();  // NOLINT
 
@@ -216,15 +222,19 @@ bool ESP32BLE::ble_setup_() {
   esp_bluedroid_attach_hci_driver(&operations);
 #endif
 
-  err = esp_bluedroid_init();
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "esp_bluedroid_init failed: %d", err);
-    return false;
+  if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_UNINITIALIZED) {
+    err = esp_bluedroid_init();
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "esp_bluedroid_init failed: %d", err);
+      return false;
+    }
   }
-  err = esp_bluedroid_enable();
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "esp_bluedroid_enable failed: %d", err);
-    return false;
+  if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
+    err = esp_bluedroid_enable();
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "esp_bluedroid_enable failed: %d", err);
+      return false;
+    }
   }
 
 #ifdef ESPHOME_ESP32_BLE_GAP_EVENT_HANDLER_COUNT
